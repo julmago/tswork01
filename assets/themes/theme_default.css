@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f4fb;
+  --bg-2: #ffffff;
+  --card: #ffffff;
+  --text: #1d1a2b;
+  --muted: #6f6a85;
+  --border: #e3def1;
+  --shadow: 0 10px 25px rgba(84, 77, 116, 0.08);
+  --primary: #8c7ff0;
+  --primary-contrast: #ffffff;
+  --accent: #6dd6c8;
+  --danger: #f28482;
+  --success: #67c38e;
+  --warning: #f4c164;
+  --radius: 10px;
+  --radius-lg: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 40px;
+  --font: "Inter", "SF Pro Text", system-ui, sans-serif;
+  --mono: "SFMono-Regular", Menlo, monospace;
+}

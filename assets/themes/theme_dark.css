@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1118;
+  --bg-2: #171a24;
+  --card: #1c2030;
+  --text: #f1f1f7;
+  --muted: #9ba0b5;
+  --border: #2a3043;
+  --shadow: 0 14px 24px rgba(0, 0, 0, 0.35);
+  --primary: #8c7ff0;
+  --primary-contrast: #11111a;
+  --accent: #6dd6c8;
+  --danger: #f28482;
+  --success: #67c38e;
+  --warning: #f4c164;
+  --radius: 10px;
+  --radius-lg: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 40px;
+  --font: "Inter", "SF Pro Text", system-ui, sans-serif;
+  --mono: "SFMono-Regular", Menlo, monospace;
+}
+
+.table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}

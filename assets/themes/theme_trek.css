@@ -1,0 +1,53 @@
+:root {
+  color-scheme: dark;
+  --bg: #070b12;
+  --bg-2: #0e1624;
+  --card: #111c2d;
+  --text: #e9f2ff;
+  --muted: #9bb4d0;
+  --border: rgba(120, 200, 255, 0.25);
+  --shadow: 0 0 22px rgba(72, 166, 255, 0.25);
+  --primary: #4ad6ff;
+  --primary-contrast: #02111d;
+  --accent: #8f7bff;
+  --danger: #ff6f6f;
+  --success: #4de8b1;
+  --warning: #ffc857;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 40px;
+  --font: "Orbitron", "Inter", system-ui, sans-serif;
+  --mono: "SFMono-Regular", Menlo, monospace;
+}
+
+body {
+  background-image: radial-gradient(circle at top, rgba(72, 166, 255, 0.18), transparent 45%),
+    radial-gradient(circle at 20% 20%, rgba(143, 123, 255, 0.14), transparent 40%);
+}
+
+.topbar {
+  border-bottom: 1px solid rgba(74, 214, 255, 0.45);
+  box-shadow: 0 0 25px rgba(74, 214, 255, 0.2);
+}
+
+.card {
+  border: 1px solid rgba(74, 214, 255, 0.35);
+  box-shadow: 0 0 18px rgba(74, 214, 255, 0.2);
+}
+
+.btn {
+  box-shadow: 0 0 12px rgba(74, 214, 255, 0.35);
+}
+
+.btn-ghost {
+  border-color: rgba(74, 214, 255, 0.4);
+}
+
+.table thead th {
+  background: rgba(14, 22, 36, 0.85);
+}
