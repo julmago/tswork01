@@ -573,6 +573,63 @@ foreach ($ts_stock_moves as $index => $move) {
   $ts_stock_moves[$index]['result_qty'] = (int)$stock_resultante;
 }
 
+
+if (is_post() && post('action') === 'ml_push_stock') {
+  require_permission($can_edit);
+
+  if (!$ml_sites) {
+    $error = 'No hay sitios MercadoLibre configurados.';
+  } elseif (!$ml_links) {
+    $error = 'No hay vínculos de MercadoLibre para este producto.';
+  } else {
+    $currentQty = (int)($ts_stock['qty'] ?? 0);
+
+    $allSites = stock_sync_active_sites();
+    $siteById = [];
+    foreach ($allSites as $s) {
+      $sid = (int)($s['id'] ?? 0);
+      if ($sid > 0) {
+        $siteById[$sid] = $s;
+      }
+    }
+
+    $linkedSiteIds = [];
+    foreach ($ml_links as $lnk) {
+      $sid = (int)($lnk['site_id'] ?? 0);
+      if ($sid > 0) {
+        $linkedSiteIds[$sid] = true;
+      }
+    }
+    $linkedSiteIds = array_keys($linkedSiteIds);
+
+    $mlPushErrors = [];
+
+    foreach ($linkedSiteIds as $mlSiteId) {
+      $site = $siteById[$mlSiteId] ?? null;
+      if (!$site) {
+        $mlPushErrors[] = "Sitio ML #{$mlSiteId} no encontrado.";
+        continue;
+      }
+
+      if (!stock_sync_allows_push($site)) {
+        continue;
+      }
+
+      $res = sync_stock_to_mercadolibre_with_result($site, (string)$product['sku'], $currentQty, (int)$id);
+
+      if (!$res || ($res['ok'] ?? false) !== true) {
+        $mlPushErrors[] = "ML " . ($ml_site_names[$mlSiteId] ?? ('#' . $mlSiteId)) . ": " . ($res['error'] ?? 'Error desconocido');
+      }
+    }
+
+    if ($mlPushErrors) {
+      $error = 'Error actualizando stock en MercadoLibre: ' . implode(' | ', $mlPushErrors);
+    } else {
+      $message = 'Stock enviado a MercadoLibre correctamente.';
+    }
+  }
+}
+
 $supplier_margin_column = 'default_margin_percent';
 $supplier_discount_column = null;
 $supplier_columns_st = db()->query("SHOW COLUMNS FROM suppliers");
@@ -996,11 +1053,27 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
     <div id="tab-ml" class="tab-panel">
     <?php if ($ml_sites): ?>
       <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">MercadoLibre (vínculo)</h3>
-          <span class="muted small">Permite múltiples publicaciones/variantes por producto</span>
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div>
+            <h3 class="card-title">MercadoLibre (vínculo)</h3>
+            <span class="muted small">Permite múltiples publicaciones/variantes por producto</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+            <span class="muted small">
+              Stock actual (TSWork): <strong><?= (int)($ts_stock['qty'] ?? 0) ?></strong>
+            </span>
+            <?php if ($can_edit): ?>
+              <form method="post" style="margin:0;">
+                <input type="hidden" name="action" value="ml_push_stock">
+                <button class="btn btn-ghost" type="submit" <?= $ml_links ? '' : 'disabled' ?>>Actualizar Stock</button>
+              </form>
+            <?php endif; ?>
+          </div>
         </div>
         <div class="card-body stack">
+          <?php if (!$ml_links): ?>
+            <p class="muted small">Para actualizar stock primero vinculá al menos una publicación.</p>
+          <?php endif; ?>
           <?php if ($can_edit): ?>
             <div class="stack" id="ml-link-form">
               <div class="form-row" style="grid-template-columns:repeat(2, minmax(0, 1fr));">

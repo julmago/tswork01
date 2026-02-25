@@ -1007,6 +1007,11 @@ function sync_stock_to_mercadolibre_with_result(array $site, string $sku, int $n
     return ['ok' => false, 'error' => 'Sitio inválido.', 'http_status' => 0, 'response_preview' => ''];
   }
 
+  // MercadoLibre no acepta stock negativo
+  if ($newQty < 0) {
+    $newQty = 0;
+  }
+
   if (!stock_sync_site_has_credentials($site)) {
     return ['ok' => false, 'error' => 'MercadoLibre sin credenciales válidas.', 'http_status' => 0, 'response_preview' => ''];
   }
