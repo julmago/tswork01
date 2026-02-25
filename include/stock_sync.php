@@ -1641,10 +1641,14 @@ function sync_push_stock_to_sites_by_product(int $productId, string $sku, int $n
       }
 
       $variationToUse = $itemHasVariations ? $mlVariationId : null;
+      $qtyToSend = (int)$newQty;
+      if ($qtyToSend < 0) {
+        $qtyToSend = 0;
+      }
       $endpoint = $variationToUse !== null
         ? 'https://api.mercadolibre.com/items/' . rawurlencode($mlItemId) . '/variations/' . rawurlencode($variationToUse)
         : 'https://api.mercadolibre.com/items/' . rawurlencode($mlItemId);
-      $responseRaw = ml_api_request($siteId, 'PUT', $endpoint, ['available_quantity' => $newQty]);
+      $responseRaw = ml_api_request($siteId, 'PUT', $endpoint, ['available_quantity' => $qtyToSend]);
       $response = ['code' => (int)$responseRaw['code'], 'body' => (string)$responseRaw['raw']];
       $httpStatus = (int)($response['code'] ?? 0);
       $body = (string)($response['body'] ?? '');
@@ -1673,7 +1677,7 @@ function sync_push_stock_to_sites_by_product(int $productId, string $sku, int $n
         'sku' => $sku,
         'item_id' => $mlItemId,
         'variation_id' => $variationToUse,
-        'qty' => $newQty,
+        'qty' => $qtyToSend,
         'ok' => $ok,
         'http_status' => $httpStatus,
         'http_body' => mb_substr($body, 0, 2000),
