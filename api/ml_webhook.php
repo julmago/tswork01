@@ -294,6 +294,20 @@ if ($refreshToken === '') {
   exit;
 }
 
+$syncMode = stock_sync_mode($site);
+if (in_array($topic, ['items', 'stock'], true)) {
+  if (!stock_sync_allows_pull($site)) {
+    ml_webhook_log('ML webhook ignorado: sitio no permite PULL según stock_sync_mode', [
+      'site_id' => $siteId,
+      'topic' => $topic,
+      'mode' => $syncMode,
+      'resource' => $resource,
+    ]);
+    http_response_code(200);
+    exit;
+  }
+}
+
 $rows = [];
 if ($topic === 'items' || $topic === 'stock') {
   $itemId = stock_sync_ml_extract_item_id_from_resource($resource);
@@ -461,7 +475,10 @@ foreach ($rows as $row) {
       $propagationKey = $productId . '|' . $qty;
       if (!isset($propagatedProducts[$propagationKey])) {
         $propagatedProducts[$propagationKey] = true;
-        $pushStatus = stock_sync_propagate_webhook_update($productId, $sku, $qty, $siteId, 'mercadolibre', $eventId, 20);
+        $pushStatus = [];
+        if (stock_sync_allows_pull($site)) {
+          $pushStatus = stock_sync_propagate_webhook_update($productId, $sku, $qty, $siteId, 'mercadolibre', $eventId, 20);
+        }
         ml_webhook_log('Propagación webhook ML ejecutada', [
           'source_site_id' => $siteId,
           'product_id' => $productId,
