@@ -129,8 +129,19 @@ stock_propagation_trace('TS_UPDATED', [
 $pushStatus = [];
 if ($siteId > 0 && isset($site)) {
   $originMode = stock_sync_mode($site);
+
+  stock_propagation_trace('WEBHOOK_CHAIN_PUSH', [
+    'trace_id' => $traceId,
+    'origin_mode' => $originMode,
+    'origin_site_id' => $siteId,
+    'sku' => $sku,
+    'qty' => (int)$stock['qty'],
+  ]);
+
   if ($originMode === 'SITE_TO_TS') {
-    $pushStatus = stock_sync_propagate_webhook_update($productId, $sku, (int)$stock['qty'], $siteId, 'prestashop', $eventId, 20, 'SITE_WEBHOOK', $traceId, $originMode);
+    // Cadena Sitio->TSWork->otros sitios con push estándar.
+    // Excluye el sitio origen para evitar loop y permite empujar a ML vía ts_ml_links.
+    $pushStatus = sync_push_stock_to_sites($sku, (int)$stock['qty'], $siteId, $productId);
   } else {
     $pushStatus = sync_push_stock_to_sites($sku, (int)$stock['qty'], $siteId, $productId);
   }
