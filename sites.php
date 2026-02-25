@@ -54,6 +54,7 @@ if (is_post()) {
     $isActive = post('is_active') === '1' ? 1 : 0;
     $showInList = post('is_visible', '1') === '0' ? 0 : 1;
     $showInProduct = post('show_in_product', '1') === '0' ? 0 : 1;
+    $showSync = post('show_sync', '0') === '1' ? 1 : 0;
     $connectionEnabled = post('connection_enabled', '0') === '1' ? 1 : 0;
     $syncStockEnabledLegacy = post('sync_stock_enabled', '0') === '1' ? 1 : 0;
     $stockSyncMode = normalize_stock_sync_mode(post('stock_sync_mode', ''), $syncStockEnabledLegacy);
@@ -85,8 +86,8 @@ if (is_post()) {
         if ($st->fetch()) {
           $error = 'Ese sitio ya existe.';
         } else {
-          $st = $pdo->prepare('INSERT INTO sites(name, channel_type, conn_type, conn_enabled, sync_stock_enabled, stock_sync_mode, margin_percent, is_active, is_visible, show_in_product, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-          $st->execute([$name, $channelType, strtolower($channelType), $connectionEnabled, $syncStockEnabled, $stockSyncMode, $margin, $isActive, $showInList, $showInProduct]);
+          $st = $pdo->prepare('INSERT INTO sites(name, channel_type, conn_type, conn_enabled, sync_stock_enabled, stock_sync_mode, margin_percent, is_active, is_visible, show_in_product, show_sync, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+          $st->execute([$name, $channelType, strtolower($channelType), $connectionEnabled, $syncStockEnabled, $stockSyncMode, $margin, $isActive, $showInList, $showInProduct, $showSync]);
           $siteId = (int)$pdo->lastInsertId();
           $effectiveMlRedirectUri = $mlRedirectUri !== '' ? $mlRedirectUri : ml_default_callback_url();
           $st = $pdo->prepare("INSERT INTO site_connections (site_id, channel_type, enabled, ps_base_url, ps_api_key, webhook_secret, ps_shop_id, ml_client_id, ml_client_secret, ml_redirect_uri, ml_notification_secret, ml_access_token, ml_refresh_token, ml_token_expires_at, ml_connected_at, ml_user_id, ml_status, updated_at)
@@ -163,6 +164,7 @@ if (is_post()) {
     $isActive = post('is_active') === '1' ? 1 : 0;
     $showInList = post('is_visible', '1') === '0' ? 0 : 1;
     $showInProduct = post('show_in_product', '1') === '0' ? 0 : 1;
+    $showSync = post('show_sync', '0') === '1' ? 1 : 0;
     $connectionEnabled = post('connection_enabled', '0') === '1' ? 1 : 0;
     $syncStockEnabledLegacy = post('sync_stock_enabled', '0') === '1' ? 1 : 0;
     $stockSyncMode = normalize_stock_sync_mode(post('stock_sync_mode', ''), $syncStockEnabledLegacy);
@@ -196,8 +198,8 @@ if (is_post()) {
         if ($st->fetch()) {
           $error = 'Ese sitio ya existe.';
         } else {
-          $st = $pdo->prepare('UPDATE sites SET name = ?, channel_type = ?, conn_type = ?, conn_enabled = ?, sync_stock_enabled = ?, stock_sync_mode = ?, margin_percent = ?, is_active = ?, is_visible = ?, show_in_product = ?, updated_at = NOW() WHERE id = ?');
-          $st->execute([$name, $channelType, strtolower($channelType), $connectionEnabled, $syncStockEnabled, $stockSyncMode, $margin, $isActive, $showInList, $showInProduct, $id]);
+          $st = $pdo->prepare('UPDATE sites SET name = ?, channel_type = ?, conn_type = ?, conn_enabled = ?, sync_stock_enabled = ?, stock_sync_mode = ?, margin_percent = ?, is_active = ?, is_visible = ?, show_in_product = ?, show_sync = ?, updated_at = NOW() WHERE id = ?');
+          $st->execute([$name, $channelType, strtolower($channelType), $connectionEnabled, $syncStockEnabled, $stockSyncMode, $margin, $isActive, $showInList, $showInProduct, $showSync, $id]);
           $effectiveMlRedirectUri = $mlRedirectUri !== '' ? $mlRedirectUri : ml_default_callback_url();
           $st = $pdo->prepare("INSERT INTO site_connections (site_id, channel_type, enabled, ps_base_url, ps_api_key, webhook_secret, ps_shop_id, ml_client_id, ml_client_secret, ml_redirect_uri, ml_notification_secret, ml_access_token, ml_refresh_token, ml_token_expires_at, ml_connected_at, ml_user_id, ml_status, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, 'DISCONNECTED', NOW())
@@ -331,7 +333,7 @@ $sites = $listSt->fetchAll();
 $editId = (int)get('edit_id', '0');
 $editSite = null;
 if ($editId > 0) {
-  $st = $pdo->prepare('SELECT id, name, channel_type, conn_type, conn_enabled, sync_stock_enabled, stock_sync_mode, margin_percent, is_active, is_visible, show_in_product FROM sites WHERE id = ? LIMIT 1');
+  $st = $pdo->prepare('SELECT id, name, channel_type, conn_type, conn_enabled, sync_stock_enabled, stock_sync_mode, margin_percent, is_active, is_visible, show_in_product, show_sync FROM sites WHERE id = ? LIMIT 1');
   $st->execute([$editId]);
   $editSite = $st->fetch();
 }
@@ -538,6 +540,14 @@ $nextPage = min($totalPages, $page + 1);
                   <option value="BIDIR" <?= $syncModeValue === 'BIDIR' ? 'selected' : '' ?>>Bidireccional</option>
                   <option value="TS_TO_SITE" <?= $syncModeValue === 'TS_TO_SITE' ? 'selected' : '' ?>>TSWork → Sitio</option>
                   <option value="SITE_TO_TS" <?= $syncModeValue === 'SITE_TO_TS' ? 'selected' : '' ?>>Sitio → TSWork</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span class="form-label">Mostrar sincronización</span>
+                <select class="form-control" name="show_sync">
+                  <?php $showSyncValue = (is_post() && $error !== '' && in_array(post('action'), ['create_site', 'update_site'], true)) ? (post('show_sync', '0') === '1' ? 1 : 0) : ($editSite ? (int)($editSite['show_sync'] ?? 0) : 0); ?>
+                  <option value="1" <?= $showSyncValue === 1 ? 'selected' : '' ?>>Activo</option>
+                  <option value="0" <?= $showSyncValue === 0 ? 'selected' : '' ?>>Inactivo</option>
                 </select>
               </label>
             </div>
