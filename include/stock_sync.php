@@ -1522,6 +1522,10 @@ function sync_push_stock_to_sites(string $sku, int $newQty, ?int $excludeSiteId 
   return sync_push_stock_to_sites_by_product($productId, $sku, $newQty, $excludeSiteId);
 }
 
+function stock_sync_chain_propagate_pull_update(int $productId, string $sku, int $newQty, int $sourceSiteId): array {
+  return sync_push_stock_to_sites_by_product($productId, $sku, $newQty, $sourceSiteId);
+}
+
 function sync_push_stock_to_sites_by_product(int $productId, string $sku, int $newQty, ?int $excludeSiteId = null): array {
   ensure_stock_sync_schema();
 

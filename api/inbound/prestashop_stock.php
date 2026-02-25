@@ -81,7 +81,13 @@ stock_sync_mark_update_state($productId, $siteId, 'prestashop_webhook_pull', $ev
 
 $pushStatus = [];
 if ($sku !== '' && stock_sync_allows_pull($site)) {
-  $pushStatus = stock_sync_propagate_webhook_update($productId, $sku, (int)$stock['qty'], $siteId, 'prestashop', $eventId, 20);
+  $originMode = stock_sync_mode($site);
+
+  if ($originMode === 'SITE_TO_TS') {
+    $pushStatus = stock_sync_chain_propagate_pull_update($productId, $sku, (int)$stock['qty'], $siteId);
+  } else {
+    $pushStatus = stock_sync_propagate_webhook_update($productId, $sku, (int)$stock['qty'], $siteId, 'prestashop', $eventId, 20);
+  }
 }
 
 inbound_json(['ok' => true, 'stock' => $stock, 'push_status' => $pushStatus]);
