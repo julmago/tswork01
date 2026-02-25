@@ -362,6 +362,7 @@ function ensure_sites_schema(): void {
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     is_visible TINYINT(1) NOT NULL DEFAULT 1,
     show_in_product TINYINT(1) NOT NULL DEFAULT 1,
+    show_sync TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL,
     PRIMARY KEY (id),
@@ -380,6 +381,10 @@ function ensure_sites_schema(): void {
 
   if (!isset($site_columns['show_in_product'])) {
     $pdo->exec("ALTER TABLE sites ADD COLUMN show_in_product TINYINT(1) NOT NULL DEFAULT 1 AFTER is_visible");
+  }
+
+  if (!isset($site_columns['show_sync'])) {
+    $pdo->exec("ALTER TABLE sites ADD COLUMN show_sync TINYINT(1) NOT NULL DEFAULT 0 AFTER show_in_product");
   }
 
   if (!isset($site_columns['channel_type'])) {

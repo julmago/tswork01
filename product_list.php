@@ -15,7 +15,11 @@ require_once __DIR__ . '/include/pricing.php';
 require_once __DIR__ . '/include/stock.php';
 
 $visibleSites = [];
+$syncSites = [];
+$syncSiteIds = [];
+$syncColumnsCount = 0;
 $products = [];
+$mlSyncCounts = [];
 $q = trim(get('q', ''));
 $page = max(1, (int) get('page', 1));
 $allowedPerPage = [20, 50, 100, 200, 500, 1000, 2000, 3000];
@@ -109,6 +113,14 @@ try {
 
   $visibleSitesSt = db()->query($visibleSitesSql);
   $visibleSites = $visibleSitesSt ? $visibleSitesSt->fetchAll() : [];
+
+  foreach ($visibleSites as $s) {
+    if ((int)($s['show_sync'] ?? 0) === 1 && ($s['conn_type'] ?? '') === 'mercadolibre') {
+      $syncSites[] = $s;
+      $syncColumnsCount++;
+    }
+  }
+  $syncSiteIds = array_map(static fn($x): int => (int)$x['id'], $syncSites);
 
   $supplierMarginColumn = null;
   $supplierDiscountColumn = null;
@@ -219,6 +231,23 @@ try {
   $st->execute();
   $products = $st->fetchAll();
 
+  $productIds = array_map(static fn($p): int => (int)$p['id'], $products);
+  if ($productIds && $syncSiteIds) {
+    $inP = implode(',', array_fill(0, count($productIds), '?'));
+    $inS = implode(',', array_fill(0, count($syncSiteIds), '?'));
+    $syncSql = "SELECT product_id, site_id, COUNT(*) AS c
+      FROM ts_ml_links
+      WHERE product_id IN ($inP) AND site_id IN ($inS)
+      GROUP BY product_id, site_id";
+    $syncSt = db()->prepare($syncSql);
+    $syncSt->execute(array_merge($productIds, $syncSiteIds));
+    foreach ($syncSt->fetchAll() as $r) {
+      $pid = (int)$r['product_id'];
+      $sid = (int)$r['site_id'];
+      $mlSyncCounts[$pid][$sid] = (int)$r['c'];
+    }
+  }
+
   if ($q !== '') {
     $query_base['q'] = $q;
   }
@@ -248,7 +277,11 @@ try {
   }
 
   $visibleSites = [];
+  $syncSites = [];
+  $syncSiteIds = [];
+  $syncColumnsCount = 0;
   $products = [];
+  $mlSyncCounts = [];
   $total = 0;
   $total_pages = 1;
   $page = 1;
@@ -344,13 +377,18 @@ try {
               <th><a href="<?= e($buildSortLink('name')) ?>">nombre<?= e($sortIndicator('name')) ?></a></th>
               <th><a href="<?= e($buildSortLink('brand')) ?>">marca<?= e($sortIndicator('brand')) ?></a></th>
               <th><a href="<?= e($buildSortLink('supplier')) ?>">proveedor<?= e($sortIndicator('supplier')) ?></a></th>
-              <?php foreach ($visibleSites as $site): ?><th><?= e($site['name']) ?></th><?php endforeach; ?>
+              <?php foreach ($visibleSites as $site): ?>
+                <th><?= e($site['name']) ?></th>
+                <?php if ((int)($site['show_sync'] ?? 0) === 1 && ($site['conn_type'] ?? '') === 'mercadolibre'): ?>
+                  <th><?= e($site['name']) ?> SYNC</th>
+                <?php endif; ?>
+              <?php endforeach; ?>
               <th><a href="<?= e($buildSortLink('stock')) ?>">Stock<?= e($sortIndicator('stock')) ?></a></th>
             </tr>
           </thead>
           <tbody>
             <?php if (!$products): ?>
-              <tr><td colspan="<?= 5 + count($visibleSites) + ($canSetStock ? 1 : 0) ?>">Sin productos.</td></tr>
+              <tr><td colspan="<?= 5 + count($visibleSites) + $syncColumnsCount + ($canSetStock ? 1 : 0) ?>">Sin productos.</td></tr>
             <?php else: ?>
               <?php foreach ($products as $p): ?>
                 <tr>
@@ -389,6 +427,16 @@ try {
                         }
                       ?>
                     </td>
+                    <?php if ((int)($site['show_sync'] ?? 0) === 1 && ($site['conn_type'] ?? '') === 'mercadolibre'): ?>
+                      <td>
+                        <?php
+                          $pid = (int)$p['id'];
+                          $sid = (int)$site['id'];
+                          $c = (int)($mlSyncCounts[$pid][$sid] ?? 0);
+                          echo $c > 0 ? e((string)$c) : '—';
+                        ?>
+                      </td>
+                    <?php endif; ?>
                   <?php endforeach; ?>
                   <td><?= (int)$p['ts_stock_qty'] ?></td>
                 </tr>
