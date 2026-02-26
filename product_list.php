@@ -175,7 +175,7 @@ try {
   $select_sql = "SELECT p.id, p.sku, p.name, COALESCE(b.name, p.brand) AS brand,"
     . " p.sale_mode, p.sale_units_per_pack,"
     . " s.name AS supplier_name,"
-    . " ps1.supplier_cost, ps1.cost_unitario, ps1.cost_type, ps1.units_per_pack,"
+    . " ps1.supplier_sku, ps1.supplier_cost, ps1.cost_unitario, ps1.cost_type, ps1.units_per_pack,"
     . " COALESCE(s.import_default_units_per_pack, 0) AS supplier_default_units_per_pack,"
     . " {$supplierMarginExpr} AS supplier_default_margin_percent,"
     . " {$supplierDiscountExpr} AS supplier_discount_percent,"
@@ -190,7 +190,7 @@ try {
     . " FROM products p"
     . " LEFT JOIN brands b ON b.id = p.brand_id"
     . " LEFT JOIN ("
-    . "   SELECT ps_pick.product_id, ps_pick.supplier_id, ps_pick.supplier_cost, ps_pick.cost_unitario, ps_pick.cost_type, ps_pick.units_per_pack"
+    . "   SELECT ps_pick.product_id, ps_pick.supplier_id, ps_pick.supplier_sku, ps_pick.supplier_cost, ps_pick.cost_unitario, ps_pick.cost_type, ps_pick.units_per_pack"
     . "   FROM product_suppliers ps_pick"
     . "   INNER JOIN suppliers s_pick ON s_pick.id = ps_pick.supplier_id"
     . "   INNER JOIN products p_pick ON p_pick.id = ps_pick.product_id"
@@ -373,22 +373,23 @@ try {
             ?>
             <tr>
               <?php if ($canSetStock): ?><th><input type="checkbox" id="select-all-products" aria-label="Seleccionar todos"></th><?php endif; ?>
-              <th><a href="<?= e($buildSortLink('sku')) ?>">sku<?= e($sortIndicator('sku')) ?></a></th>
-              <th><a href="<?= e($buildSortLink('name')) ?>">nombre<?= e($sortIndicator('name')) ?></a></th>
-              <th><a href="<?= e($buildSortLink('brand')) ?>">marca<?= e($sortIndicator('brand')) ?></a></th>
-              <th><a href="<?= e($buildSortLink('supplier')) ?>">proveedor<?= e($sortIndicator('supplier')) ?></a></th>
+              <th><a href="<?= e($buildSortLink('sku')) ?>">SKU<?= e($sortIndicator('sku')) ?></a></th>
+              <th><a href="<?= e($buildSortLink('name')) ?>">NOMBRE<?= e($sortIndicator('name')) ?></a></th>
+              <th><a href="<?= e($buildSortLink('brand')) ?>">MARCA<?= e($sortIndicator('brand')) ?></a></th>
+              <th><a href="<?= e($buildSortLink('supplier')) ?>">PROVEEDOR<?= e($sortIndicator('supplier')) ?></a></th>
+              <th>SKU PROVEEDOR</th>
               <?php foreach ($visibleSites as $site): ?>
                 <th><?= e($site['name']) ?></th>
                 <?php if ((int)($site['show_sync'] ?? 0) === 1 && ($site['conn_type'] ?? '') === 'mercadolibre'): ?>
                   <th><?= e($site['name']) ?> SYNC</th>
                 <?php endif; ?>
               <?php endforeach; ?>
-              <th><a href="<?= e($buildSortLink('stock')) ?>">Stock<?= e($sortIndicator('stock')) ?></a></th>
+              <th><a href="<?= e($buildSortLink('stock')) ?>">STOCK<?= e($sortIndicator('stock')) ?></a></th>
             </tr>
           </thead>
           <tbody>
             <?php if (!$products): ?>
-              <tr><td colspan="<?= 5 + count($visibleSites) + $syncColumnsCount + ($canSetStock ? 1 : 0) ?>">Sin productos.</td></tr>
+              <tr><td colspan="<?= 6 + count($visibleSites) + $syncColumnsCount + ($canSetStock ? 1 : 0) ?>">Sin productos.</td></tr>
             <?php else: ?>
               <?php foreach ($products as $p): ?>
                 <tr>
@@ -397,6 +398,7 @@ try {
                   <td><a href="product_view.php?id=<?= (int)$p['id'] ?>"><?= e($p['name']) ?></a></td>
                   <td><?= e($p['brand']) ?></td>
                   <td><?= $p['supplier_name'] ? e($p['supplier_name']) : '—' ?></td>
+                  <td><?= !empty($p['supplier_sku']) ? e($p['supplier_sku']) : '—' ?></td>
                   <?php foreach ($visibleSites as $site): ?>
                     <td>
                       <?php
