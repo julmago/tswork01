@@ -25,8 +25,13 @@ if (!$product) abort(404, 'Producto no encontrado.');
 
 $error = '';
 $message = '';
-$can_edit = can_edit_product();
+$can_product_edit_master = can_edit_product();
 $can_add_code = can_add_code();
+$can_edit_data = $can_product_edit_master && hasPerm('product_edit_data');
+$can_edit_providers = $can_product_edit_master && hasPerm('product_edit_providers');
+$can_edit_stock = $can_product_edit_master && hasPerm('product_edit_stock');
+$can_edit_ml = $can_product_edit_master && hasPerm('product_edit_ml');
+$can_pull_ps_stock = $can_edit_stock && hasPerm('product_stock_pull_prestashop');
 
 $parse_supplier_cost_decimal = static function (string $supplier_cost_raw): ?int {
   $supplier_cost_raw = str_replace(',', '.', trim($supplier_cost_raw));
@@ -47,7 +52,7 @@ $is_non_blocking_stock_push_error = static function (string $error): bool {
   return str_contains($normalized, 'falta vincular item id/variante');
 };
 if (is_post() && post('action') === 'update') {
-  require_permission($can_edit);
+  require_permission($can_edit_data);
   $sku = post('sku');
   $name = post('name');
   $brand_id = (int)post('brand_id', '0');
@@ -121,7 +126,7 @@ if (is_post() && post('action') === 'delete_code') {
 }
 
 if (is_post() && post('action') === 'add_supplier_link') {
-  require_permission($can_edit);
+  require_permission($can_edit_providers);
   $supplier_id = (int)post('supplier_id', '0');
   $supplier_sku = post('supplier_sku');
   $cost_type = post('cost_type', 'UNIDAD');
@@ -180,7 +185,7 @@ if (is_post() && post('action') === 'add_supplier_link') {
 }
 
 if (is_post() && post('action') === 'update_supplier_link') {
-  require_permission($can_edit);
+  require_permission($can_edit_providers);
   $link_id = (int)post('edit_link_id', '0');
   $supplier_id = (int)post('supplier_id', '0');
   $supplier_sku = post('supplier_sku');
@@ -236,7 +241,7 @@ if (is_post() && post('action') === 'update_supplier_link') {
 }
 
 if (is_post() && post('action') === 'delete_supplier_link') {
-  require_permission($can_edit);
+  require_permission($can_edit_providers);
   $link_id = (int)post('link_id', '0');
   if ($link_id > 0) {
     $st = db()->prepare("DELETE FROM product_suppliers WHERE id = ? AND product_id = ?");
@@ -246,7 +251,7 @@ if (is_post() && post('action') === 'delete_supplier_link') {
 }
 
 if (is_post() && post('action') === 'set_active_supplier') {
-  require_permission($can_edit);
+  require_permission($can_edit_providers);
   $link_id = (int)post('link_id', '0');
   if ($link_id > 0) {
     try {
@@ -266,7 +271,7 @@ if (is_post() && post('action') === 'set_active_supplier') {
 }
 
 if (is_post() && post('action') === 'create_supplier_inline') {
-  require_permission($can_edit);
+  require_permission($can_edit_providers);
 
   header('Content-Type: application/json; charset=utf-8');
 
@@ -327,7 +332,7 @@ if (is_post() && post('action') === 'create_supplier_inline') {
 }
 
 if (is_post() && post('action') === 'stock_set') {
-  require_permission($can_edit);
+  require_permission($can_edit_stock);
   $qty_raw = trim(post('stock_set_qty'));
   $note = post('stock_note');
 
@@ -380,7 +385,7 @@ if (is_post() && post('action') === 'stock_set') {
 }
 
 if (is_post() && post('action') === 'stock_add') {
-  require_permission($can_edit);
+  require_permission($can_edit_stock);
   $delta_raw = trim(post('stock_delta'));
   $note = post('stock_note');
 
@@ -433,7 +438,7 @@ if (is_post() && post('action') === 'stock_add') {
 }
 
 if (is_post() && post('action') === 'pull_stock_prestashop') {
-  require_permission($can_edit);
+  require_permission($can_pull_ps_stock);
   $siteId = (int)post('site_id', '0');
   $syncSites = get_prestashop_sync_sites();
   $targetSite = null;
@@ -575,7 +580,7 @@ foreach ($ts_stock_moves as $index => $move) {
 
 
 if (is_post() && post('action') === 'ml_push_stock') {
-  require_permission($can_edit);
+  require_permission($can_edit_ml);
 
   if (!$ml_sites) {
     $error = 'No hay sitios MercadoLibre configurados.';
@@ -888,7 +893,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
       <div class="card-header">
         <h3 class="card-title">Datos del producto</h3>
       </div>
-      <?php if ($can_edit): ?>
+      <?php if ($can_edit_data): ?>
         <form method="post" class="stack">
           <input type="hidden" name="action" value="update">
           <div class="form-row" style="grid-template-columns:repeat(3, minmax(0, 1fr));">
@@ -954,7 +959,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
       <div class="card-body stack">
         <div><strong>Stock actual:</strong> <?= (int)$ts_stock['qty'] ?></div>
 
-        <?php if ($can_edit): ?>
+        <?php if ($can_edit_stock): ?>
           <form method="post" class="stack">
             <input type="hidden" name="action" value="stock_set">
             <div class="form-row" style="grid-template-columns:repeat(2, minmax(0, 1fr));">
@@ -989,7 +994,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
             </div>
           </form>
 
-          <?php if ($prestashop_sync_sites): ?>
+          <?php if ($can_pull_ps_stock && $prestashop_sync_sites): ?>
             <form method="post" class="stack">
               <input type="hidden" name="action" value="pull_stock_prestashop">
               <div class="form-row" style="grid-template-columns:2fr 1fr; align-items:end;">
@@ -1062,7 +1067,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
             <span class="muted small">
               Stock actual (TSWork): <strong><?= (int)($ts_stock['qty'] ?? 0) ?></strong>
             </span>
-            <?php if ($can_edit): ?>
+            <?php if ($can_edit_ml): ?>
               <form method="post" style="margin:0;">
                 <input type="hidden" name="action" value="ml_push_stock">
                 <button class="btn btn-ghost" type="submit" <?= $ml_links ? '' : 'disabled' ?>>Actualizar Stock</button>
@@ -1074,7 +1079,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
           <?php if (!$ml_links): ?>
             <p class="muted small">Para actualizar stock primero vinculá al menos una publicación.</p>
           <?php endif; ?>
-          <?php if ($can_edit): ?>
+          <?php if ($can_edit_ml): ?>
             <div class="stack" id="ml-link-form">
               <div class="form-row" style="grid-template-columns:repeat(2, minmax(0, 1fr));">
                 <div class="form-group">
@@ -1237,7 +1242,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
         <span class="muted small"><?= count($supplier_links) ?> vinculados</span>
       </div>
       <div class="card-body product-linked-suppliers-body">
-        <?php if ($can_edit): ?>
+        <?php if ($can_edit_providers): ?>
           <form method="post" class="stack product-linked-suppliers-form">
             <input type="hidden" name="action" value="add_supplier_link" id="supplier-link-action">
             <input type="hidden" name="edit_link_id" value="" id="edit-link-id-input">
@@ -1296,14 +1301,14 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
                 <th>costo proveedor</th>
                 <th>costo unitario</th>
                 <th>activo</th>
-                <?php if ($can_edit): ?>
+                <?php if ($can_edit_providers): ?>
                   <th>acciones</th>
                 <?php endif; ?>
               </tr>
             </thead>
             <tbody>
               <?php if (!$supplier_links): ?>
-                <tr><td colspan="<?= $can_edit ? 8 : 7 ?>">Sin proveedores vinculados.</td></tr>
+                <tr><td colspan="<?= $can_edit_providers ? 8 : 7 ?>">Sin proveedores vinculados.</td></tr>
               <?php else: ?>
                 <?php foreach ($supplier_links as $link): ?>
                   <tr>
@@ -1314,7 +1319,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
                     <td><?= ($link['supplier_cost'] === null || trim((string)$link['supplier_cost']) === '') ? '—' : number_format(round((float)$link['supplier_cost']), 0, '', '') ?></td>
                     <td><?= ($link['normalized_unit_cost'] === null || trim((string)$link['normalized_unit_cost']) === '') ? '—' : number_format(round((float)$link['normalized_unit_cost']), 0, '', '') ?></td>
                     <td><?= (int)$link['is_active'] === 1 ? 'Sí' : 'No' ?></td>
-                    <?php if ($can_edit): ?>
+                    <?php if ($can_edit_providers): ?>
                       <td class="table-actions">
                         <button
                           class="btn btn-ghost js-edit-supplier-link"
