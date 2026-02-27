@@ -295,7 +295,13 @@ $st->execute([$list_id]);
 $list = $st->fetch();
 
 $items = db()->prepare("
-  SELECT p.id AS product_id, p.sku, p.name, i.qty, i.synced_qty, i.updated_at
+  SELECT p.id AS product_id, p.sku, p.name,
+    (
+      SELECT MIN(ps.supplier_sku)
+      FROM product_suppliers ps
+      WHERE ps.product_id = p.id
+    ) AS supplier_sku,
+    i.qty, i.synced_qty, i.updated_at
   FROM stock_list_items i
   JOIN products p ON p.id = i.product_id
   WHERE i.stock_list_id = ?
@@ -603,6 +609,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
           <thead>
             <tr>
               <th>sku</th>
+              <th>sku proveedor</th>
               <th>nombre</th>
               <th>cantidad</th>
               <th>PrestaShop</th>
@@ -616,7 +623,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
           </thead>
           <tbody>
             <?php if (!$items): ?>
-              <tr><td colspan="<?= ($showActionsColumn ? 5 : 4) + count($push_site_ids) ?>">Sin items todavía.</td></tr>
+              <tr><td colspan="<?= ($showActionsColumn ? 6 : 5) + count($push_site_ids) ?>">Sin items todavía.</td></tr>
             <?php else: ?>
               <?php foreach ($items as $it): ?>
                 <?php
@@ -625,6 +632,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
                 ?>
                 <tr>
                   <td><?= e($it['sku']) ?></td>
+                  <td><?= e($it['supplier_sku'] ?? '—') ?></td>
                   <td><?= e($it['name']) ?></td>
                   <td><?= $qty ?></td>
                   <td>
