@@ -762,6 +762,10 @@ function theme_catalog(): array {
       'name' => 'Ares',
       'description' => 'Oscuro y futurista, con neón rojo y acentos dorados.',
     ],
+    'darth' => [
+      'name' => 'Darth Vender',
+      'description' => 'Oscuro estilo sith: negro con luz roja tenue y botones transparentes con borde rojo.',
+    ],
   ];
 }
 
@@ -774,14 +778,10 @@ function current_theme(): string {
   return $theme;
 }
 
-function current_ui_theme(): string {
-  $uiTheme = (string)($_SESSION['ui_theme'] ?? '');
-  return in_array($uiTheme, ['trek', 'darth'], true) ? $uiTheme : '';
-}
 
 function app_body_class(string $baseClass = 'app-body'): string {
   $classes = trim($baseClass);
-  if (current_ui_theme() === 'darth') {
+  if (current_theme() === 'darth') {
     $classes = trim($classes . ' theme-darth');
   }
   return $classes;
@@ -790,7 +790,8 @@ function app_body_class(string $baseClass = 'app-body'): string {
 function theme_css_links(): string {
   $theme = current_theme();
   $base = '<link rel="stylesheet" href="' . asset_url('themes/base.css') . '">';
-  $theme_css = '<link rel="stylesheet" href="' . asset_url('themes/' . $theme . '.css') . '" id="theme-stylesheet">';
+  $themeFile = $theme === 'darth' ? 'theme_default' : $theme;
+  $theme_css = '<link rel="stylesheet" href="' . asset_url('themes/' . $themeFile . '.css') . '" id="theme-stylesheet">';
   $darth_css = '<link rel="stylesheet" href="assets/css/theme-darth-vender.css">';
   return $base . $theme_css . $darth_css;
 }
