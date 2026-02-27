@@ -346,7 +346,7 @@ function permission_default_definitions(): array {
       'vendedor' => false,
       'lectura' => false,
     ],
-    'sites_edit' => [
+    'sites_edit_data' => [
       'superadmin' => true,
       'admin' => true,
       'vendedor' => false,

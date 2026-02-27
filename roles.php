@@ -44,7 +44,7 @@ $sections = [
   'Sitios' => [
     'sites_access' => 'Acceso a Sitios',
     'sites_actions_view' => 'Acciones (columna)',
-    'sites_edit' => 'Modificar',
+    'sites_edit_data' => 'Modificar datos',
     'sites_test_connection' => 'Probar conexión',
     'sites_bulk_import_export' => 'Importar / Exportar',
   ],

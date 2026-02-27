@@ -17,7 +17,7 @@ $error = '';
 $message = '';
 
 $canSitesActionsView = hasPerm('sites_actions_view');
-$canSitesEdit = hasPerm('sites_edit');
+$canSitesEditData = hasPerm('sites_edit_data');
 $canSitesTestConnection = hasPerm('sites_test_connection');
 $canSitesBulkImportExport = hasPerm('sites_bulk_import_export');
 
@@ -55,7 +55,7 @@ if (is_post()) {
   $action = post('action');
 
   if ($action === 'create_site') {
-    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
+    require_permission($canSitesEditData, 'Sin permiso para modificar sitios.');
     $name = trim(post('name'));
     $channelType = normalize_channel_type(post('channel_type', 'NONE'));
     $margin = normalize_site_margin_percent_value(post('margin_percent'));
@@ -165,7 +165,7 @@ if (is_post()) {
   }
 
   if ($action === 'update_site') {
-    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
+    require_permission($canSitesEditData, 'Sin permiso para modificar sitios.');
     $id = (int)post('id', '0');
     $name = trim(post('name'));
     $channelType = normalize_channel_type(post('channel_type', 'NONE'));
@@ -277,7 +277,7 @@ if (is_post()) {
   }
 
   if ($action === 'toggle_site') {
-    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
+    require_permission($canSitesEditData, 'Sin permiso para modificar sitios.');
     $id = (int)post('id', '0');
     if ($id > 0) {
       try {
@@ -424,7 +424,7 @@ if (is_post() && $error !== '' && in_array(post('action'), ['create_site', 'upda
 }
 
 $showNewForm = get('new') === '1' || $editSite !== null;
-$isEditReadOnly = $editSite && !$canSitesEdit;
+$isEditReadOnly = $editSite && !$canSitesEditData;
 
 $queryBase = [];
 if ($q !== '') $queryBase['q'] = $q;
@@ -452,7 +452,7 @@ $nextPage = min($totalPages, $page + 1);
         <?php if ($showNewForm && !$editSite): ?>
           <a class="btn btn-ghost" href="sites.php<?= $q !== '' ? '?q=' . rawurlencode($q) : '' ?>">Cancelar</a>
         <?php else: ?>
-          <?php if ($canSitesEdit): ?>
+          <?php if ($canSitesEditData): ?>
             <a class="btn" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['new' => 1]))) ?>">Nuevo sitio</a>
           <?php endif; ?>
         <?php endif; ?>
@@ -633,7 +633,7 @@ $nextPage = min($totalPages, $page + 1);
           <?php if ($isEditReadOnly): ?></fieldset><?php endif; ?>
           <div class="inline-actions">
             <a class="btn btn-ghost" href="sites.php<?= $q !== '' ? '?q=' . rawurlencode($q) : '' ?>">Cancelar</a>
-            <?php if (!$isEditReadOnly && $canSitesEdit): ?>
+            <?php if (!$isEditReadOnly && $canSitesEditData): ?>
               <button class="btn" type="submit"><?= $editSite ? 'Guardar' : 'Agregar' ?></button>
             <?php endif; ?>
           </div>
@@ -750,14 +750,7 @@ $nextPage = min($totalPages, $page + 1);
                   <?php if ($canSitesActionsView): ?>
                     <td>
                       <div class="inline-actions">
-                        <?php if ($canSitesEdit): ?>
-                          <a class="btn btn-ghost btn-sm" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['page' => $page, 'edit_id' => (int)$site['id']])) ) ?>">Modificar</a>
-                          <form method="post" style="display:inline">
-                            <input type="hidden" name="action" value="toggle_site">
-                            <input type="hidden" name="id" value="<?= (int)$site['id'] ?>">
-                            <button class="btn btn-ghost btn-sm" type="submit"><?= (int)$site['is_active'] === 1 ? 'Inactivar' : 'Activar' ?></button>
-                          </form>
-                        <?php endif; ?>
+                        <a class="btn btn-ghost btn-sm" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['page' => $page, 'edit_id' => (int)$site['id']])) ) ?>">Modificar</a>
                       </div>
                     </td>
                   <?php endif; ?>
