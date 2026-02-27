@@ -9,7 +9,8 @@ $can_manage_prestashop = hasPerm('menu_config_prestashop');
 $can_view_design = hasPerm('menu_design');
 $can_cashbox_access = false;
 $can_cashbox_manage = hasPerm('cashbox_manage_boxes');
-$show_config_menu = $can_manage_tasks_settings || $can_manage_prestashop || $can_view_design || $can_cashbox_manage || $is_superadmin;
+$can_configure_bills = hasAnyCashboxPerm('can_configure_bills');
+$show_config_menu = $can_manage_tasks_settings || $can_manage_prestashop || $can_view_design || $can_cashbox_manage || $can_configure_bills || $is_superadmin;
 $display_name = trim(($u['first_name'] ?? '') . ' ' . ($u['last_name'] ?? ''));
 if ($display_name === '') {
   $display_name = $u['email'] ?? 'Usuario';
@@ -107,6 +108,9 @@ $can_cashbox_access = !empty($cashboxes);
               <?php endif; ?>
               <?php if ($can_cashbox_manage): ?>
                 <a class="config-menu-item" href="<?= url_path('cash_manage.php') ?>" role="menuitem">Administrar cajas</a>
+              <?php endif; ?>
+              <?php if ($can_configure_bills): ?>
+                <a class="config-menu-item" href="<?= url_path('cash_denoms.php') ?>" role="menuitem">Configurar billetes</a>
               <?php endif; ?>
             </div>
           </div>
