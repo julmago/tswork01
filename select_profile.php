@@ -96,7 +96,7 @@ $themes = theme_catalog();
   <title>Seleccionar perfil · TS WORK</title>
   <?= theme_css_links() ?>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
   <main class="page">
     <div class="container">
       <div class="page-header">

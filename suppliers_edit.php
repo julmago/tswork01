@@ -112,7 +112,7 @@ if (is_post() && post('action') === 'update_supplier') {
     }
   </style>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 <main class="page">
   <div class="container">

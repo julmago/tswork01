@@ -102,7 +102,7 @@ if ($cashbox) {
   <title>TS WORK</title>
   <?= theme_css_links() ?>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 
 <main class="page">

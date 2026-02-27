@@ -1,0 +1,128 @@
+/* ============ THEME: DARTH VENDER ============ */
+:root{
+  --dv-bg: #050507;
+  --dv-panel: rgba(10, 10, 14, 0.58);
+  --dv-panel-2: rgba(10, 10, 14, 0.40);
+  --dv-text: #E9E9EF;
+  --dv-muted: rgba(233,233,239,.70);
+
+  --dv-red: #ff2a2a;
+  --dv-red-2: #b80f1b;
+  --dv-red-soft: rgba(255, 42, 42, 0.18);
+
+  --dv-glow: 0 0 18px rgba(255,42,42,.22);
+  --dv-glow-strong: 0 0 26px rgba(255,42,42,.35);
+  --dv-radius: 16px;
+}
+
+/* SOLO aplica cuando el body tiene class theme-darth */
+body.theme-darth{
+  color: var(--dv-text);
+  background:
+    radial-gradient(700px 380px at 20% 10%, rgba(255,42,42,.14), transparent 60%),
+    radial-gradient(900px 520px at 85% 20%, rgba(184,15,27,.10), transparent 62%),
+    radial-gradient(780px 420px at 50% 95%, rgba(255,42,42,.08), transparent 60%),
+    var(--dv-bg);
+}
+
+body.theme-darth .card,
+body.theme-darth .panel{
+  background: linear-gradient(180deg, var(--dv-panel), var(--dv-panel-2));
+  border: 1px solid rgba(255,42,42,.18);
+  border-radius: var(--dv-radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,.55), var(--dv-glow);
+  backdrop-filter: blur(10px);
+}
+
+body.theme-darth .muted,
+body.theme-darth .help,
+body.theme-darth .small{
+  color: var(--dv-muted);
+}
+
+/* Botones transparentes con borde rojo */
+body.theme-darth .btn{
+  border: 1px solid rgba(255,42,42,.55);
+  color: var(--dv-text);
+  background: rgba(255,42,42,.06);
+  border-radius: 14px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+}
+
+body.theme-darth .btn:hover{
+  background: rgba(255,42,42,.10);
+  border-color: rgba(255,42,42,.75);
+  box-shadow: var(--dv-glow-strong);
+  transform: translateY(-1px);
+}
+
+body.theme-darth .btn:active{
+  transform: translateY(0);
+  box-shadow: var(--dv-glow);
+}
+
+body.theme-darth .btn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Inputs / selects */
+body.theme-darth input,
+body.theme-darth select,
+body.theme-darth textarea,
+body.theme-darth .input{
+  background: rgba(0,0,0,.35);
+  color: var(--dv-text);
+  border: 1px solid rgba(255,42,42,.30);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+body.theme-darth input:focus,
+body.theme-darth select:focus,
+body.theme-darth textarea:focus,
+body.theme-darth .input:focus{
+  border-color: rgba(255,42,42,.75);
+  box-shadow: 0 0 0 3px rgba(255,42,42,.18), var(--dv-glow);
+  background: rgba(0,0,0,.42);
+}
+
+/* Tabs */
+body.theme-darth .tab,
+body.theme-darth .pill,
+body.theme-darth .nav-pill{
+  border: 1px solid rgba(255,42,42,.28);
+  background: rgba(255,42,42,.05);
+  border-radius: 14px;
+}
+
+body.theme-darth .tab.active,
+body.theme-darth .pill.active,
+body.theme-darth .nav-pill.active{
+  border-color: rgba(255,42,42,.75);
+  box-shadow: var(--dv-glow);
+}
+
+/* Tablas */
+body.theme-darth th{
+  border-bottom: 1px solid rgba(255,42,42,.22);
+}
+body.theme-darth td{
+  border-bottom: 1px solid rgba(255,42,42,.10);
+}
+body.theme-darth tr:hover td{
+  background: rgba(255,42,42,.04);
+}
+
+/* Separadores */
+body.theme-darth hr,
+body.theme-darth .divider{
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,42,42,.30), transparent);
+}

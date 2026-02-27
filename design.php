@@ -6,6 +6,7 @@ require_permission(hasPerm('menu_design'));
 
 $themes = theme_catalog();
 $current_theme = current_theme();
+$current_ui_theme = current_ui_theme();
 $message = '';
 $error = '';
 
@@ -22,6 +23,21 @@ if (is_post() && post('action') === 'apply') {
     $message = 'Tema actualizado.';
   }
 }
+
+if (is_post() && post('action') === 'apply_ui_theme') {
+  $selectedUiTheme = post('ui_theme');
+  if (!in_array($selectedUiTheme, ['trek', 'darth', ''], true)) {
+    $error = 'Plantilla inválida.';
+  } else {
+    if ($selectedUiTheme === '') {
+      unset($_SESSION['ui_theme']);
+    } else {
+      $_SESSION['ui_theme'] = $selectedUiTheme;
+    }
+    $current_ui_theme = current_ui_theme();
+    $message = 'Plantilla visual actualizada.';
+  }
+}
 ?>
 <!doctype html>
 <html>
@@ -30,7 +46,7 @@ if (is_post() && post('action') === 'apply') {
   <title>TS WORK</title>
   <?= theme_css_links() ?>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 
 <main class="page">
@@ -38,6 +54,24 @@ if (is_post() && post('action') === 'apply') {
     <div class="page-header theme-page-header">
       <h2 class="page-title">Plantillas de diseño</h2>
       <span class="muted">Elegí una plantilla para cambiar el look del sistema.</span>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <form method="post" class="grid" style="gap:12px;">
+        <input type="hidden" name="action" value="apply_ui_theme">
+        <div>
+          <label for="ui_theme"><strong>Plantilla visual</strong></label>
+          <select id="ui_theme" name="ui_theme">
+            <option value="" <?= $current_ui_theme === '' ? 'selected' : '' ?>>Sin plantilla extra</option>
+            <option value="trek" <?= $current_ui_theme === 'trek' ? 'selected' : '' ?>>Trek futurista</option>
+            <option value="darth" <?= $current_ui_theme === 'darth' ? 'selected' : '' ?>>Darth Vender</option>
+          </select>
+          <p class="muted small" style="margin:8px 0 0;">Activa la clase <code>theme-darth</code> solo cuando elegís Darth Vender.</p>
+        </div>
+        <div class="form-actions" style="justify-content:flex-start;">
+          <button class="btn" type="submit">Guardar plantilla</button>
+        </div>
+      </form>
     </div>
 
     <?php if ($message || $error): ?>

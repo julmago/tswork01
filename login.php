@@ -69,7 +69,7 @@ if (is_post()) {
   <title>TS WORK</title>
   <?= theme_css_links() ?>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
   <main class="page">
     <div class="container">
       <div class="card login-card">
