@@ -16,6 +16,12 @@ function ml_unlink_json(array $payload, int $status = 200): void {
   exit;
 }
 
+$can_product_edit_master = can_edit_product();
+$can_edit_ml = $can_product_edit_master && hasPerm('product_edit_ml');
+if (!$can_edit_ml) {
+  ml_unlink_json(['ok' => false, 'error' => 'Sin permisos.'], 403);
+}
+
 if (!is_post()) {
   ml_unlink_json(['ok' => false, 'error' => 'Método inválido.'], 405);
 }

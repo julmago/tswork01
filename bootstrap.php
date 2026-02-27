@@ -292,6 +292,36 @@ function permission_default_definitions(): array {
       'vendedor' => true,
       'lectura' => false,
     ],
+    'product_edit_data' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => true,
+      'lectura' => false,
+    ],
+    'product_edit_providers' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => true,
+      'lectura' => false,
+    ],
+    'product_edit_stock' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'product_edit_ml' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => true,
+      'lectura' => false,
+    ],
+    'product_stock_pull_prestashop' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
     'product_can_add_code' => [
       'superadmin' => true,
       'admin' => true,

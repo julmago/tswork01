@@ -29,6 +29,11 @@ $sections = [
   ],
   'Productos' => [
     'product_can_edit' => 'Editar producto',
+    'product_edit_data' => 'Editar Datos',
+    'product_edit_providers' => 'Editar Proveedor',
+    'product_edit_stock' => 'Editar Stock',
+    'product_stock_pull_prestashop' => '↳ Traer stock desde PrestaShop',
+    'product_edit_ml' => 'Editar MercadoLibre',
     'product_can_add_code' => 'Agregar códigos',
     'stock_set' => 'Setear stock',
   ],
@@ -471,8 +476,18 @@ foreach ($role_keys as $role_key) {
                     }
                     $checked = !empty($perm_map[$role_key][$perm_key]);
                   ?>
+                  <?php
+                    $product_master_attr = '';
+                    if ($title === 'Productos') {
+                      if ($perm_key === 'product_can_edit') {
+                        $product_master_attr = 'data-product-master';
+                      } elseif (in_array($perm_key, ['product_edit_data', 'product_edit_providers', 'product_edit_stock', 'product_stock_pull_prestashop', 'product_edit_ml'], true)) {
+                        $product_master_attr = 'data-product-secondary';
+                      }
+                    }
+                  ?>
                   <label class="form-check" style="min-width:220px;">
-                    <input type="checkbox" name="perm_<?= e(str_replace('.', '_', $perm_key)) ?>" value="1" <?= $checked ? 'checked' : '' ?> <?= $is_locked ? 'disabled' : '' ?>>
+                    <input type="checkbox" name="perm_<?= e(str_replace('.', '_', $perm_key)) ?>" value="1" <?= $checked ? 'checked' : '' ?> <?= $product_master_attr ?> <?= $is_locked ? 'disabled' : '' ?>>
                     <span><?= e($label) ?></span>
                   </label>
                 <?php endforeach; ?>
@@ -558,6 +573,34 @@ foreach ($role_keys as $role_key) {
   })();
 </script>
 <script>
+
+  (() => {
+    const forms = document.querySelectorAll('.role-accordion-panel form');
+    const sync = (form) => {
+      const master = form.querySelector('[data-product-master]');
+      if (!master || master.disabled) {
+        return;
+      }
+      const enabled = master.checked;
+      form.querySelectorAll('[data-product-secondary]').forEach((input) => {
+        input.disabled = !enabled;
+        const label = input.closest('label');
+        if (label) {
+          label.classList.toggle('cashbox-perm-disabled', !enabled);
+        }
+      });
+    };
+
+    forms.forEach((form) => {
+      const master = form.querySelector('[data-product-master]');
+      if (!master) {
+        return;
+      }
+      master.addEventListener('change', () => sync(form));
+      sync(form);
+    });
+  })();
+
   (() => {
     const accordion = document.querySelector('[data-role-accordion]');
     if (!accordion) {
