@@ -400,6 +400,16 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
   <meta charset="utf-8">
   <title>TS WORK</title>
   <?= theme_css_links() ?>
+  <style>
+    .row-link {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .row-link:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body class="app-body">
 <?php require __DIR__ . '/partials/header.php'; ?>
@@ -629,11 +639,16 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
                 <?php
                   $qty = (int)$it['qty'];
                   $synced_qty = min((int)$it['synced_qty'], $qty);
+                  $product_id = (int)$it['product_id'];
                 ?>
                 <tr>
-                  <td><?= e($it['sku']) ?></td>
+                  <td>
+                    <a class="row-link" href="product_view.php?id=<?= $product_id ?>"><?= e($it['sku']) ?></a>
+                  </td>
                   <td><?= e($it['supplier_sku'] ?? '—') ?></td>
-                  <td><?= e($it['name']) ?></td>
+                  <td>
+                    <a class="row-link" href="product_view.php?id=<?= $product_id ?>"><?= e($it['name']) ?></a>
+                  </td>
                   <td><?= $qty ?></td>
                   <td>
                     <?php if ($synced_qty >= $qty): ?>
@@ -673,7 +688,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
                       <?php if ($can_delete_action): ?>
                         <form method="post" style="margin:0;" onsubmit="return confirm('¿Eliminar este item del listado?');">
                           <input type="hidden" name="action" value="delete_item">
-                          <input type="hidden" name="product_id" value="<?= (int)$it['product_id'] ?>">
+                          <input type="hidden" name="product_id" value="<?= $product_id ?>">
                           <button class="btn btn-danger" type="submit">Eliminar</button>
                         </form>
                       <?php endif; ?>
