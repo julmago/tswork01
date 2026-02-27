@@ -820,7 +820,7 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
     }
   </style>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 
 <main class="page">

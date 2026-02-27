@@ -774,11 +774,25 @@ function current_theme(): string {
   return $theme;
 }
 
+function current_ui_theme(): string {
+  $uiTheme = (string)($_SESSION['ui_theme'] ?? '');
+  return in_array($uiTheme, ['trek', 'darth'], true) ? $uiTheme : '';
+}
+
+function app_body_class(string $baseClass = 'app-body'): string {
+  $classes = trim($baseClass);
+  if (current_ui_theme() === 'darth') {
+    $classes = trim($classes . ' theme-darth');
+  }
+  return $classes;
+}
+
 function theme_css_links(): string {
   $theme = current_theme();
   $base = '<link rel="stylesheet" href="' . asset_url('themes/base.css') . '">';
   $theme_css = '<link rel="stylesheet" href="' . asset_url('themes/' . $theme . '.css') . '" id="theme-stylesheet">';
-  return $base . $theme_css;
+  $darth_css = '<link rel="stylesheet" href="assets/css/theme-darth-vender.css">';
+  return $base . $theme_css . $darth_css;
 }
 
 ensure_superadmin_permissions_for_session();

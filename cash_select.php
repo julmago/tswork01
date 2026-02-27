@@ -30,7 +30,7 @@ $can_view_balance = $active_cashbox_id > 0 && hasCashboxPerm('can_view_balance',
   <title>TS WORK</title>
   <?= theme_css_links() ?>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 
 <main class="page">

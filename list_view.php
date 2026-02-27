@@ -411,7 +411,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     }
   </style>
 </head>
-<body class="app-body">
+<body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
 
 <main class="page">
