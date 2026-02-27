@@ -49,6 +49,41 @@ body.theme-darth .topbar .brand{
   color: rgba(233,233,239,.92) !important;
 }
 
+body.theme-darth .nav a,
+body.theme-darth .navbar a,
+body.theme-darth .topbar a{
+  color: rgba(233,233,239,.90) !important;
+}
+
+body.theme-darth .nav a.active,
+body.theme-darth .navbar a.active,
+body.theme-darth .topbar a.active,
+body.theme-darth .nav .active > a,
+body.theme-darth .navbar .active > a{
+  background: rgba(255,42,42,.10) !important;
+  border: 1px solid rgba(255,42,42,.30) !important;
+  border-radius: 999px;
+  color: rgba(233,233,239,.92) !important;
+  box-shadow: 0 0 14px rgba(255,42,42,.14) !important;
+}
+
+body.theme-darth .topbar .btn,
+body.theme-darth .navbar .btn,
+body.theme-darth header .btn{
+  background: rgba(255,42,42,.06) !important;
+  border: 1px solid rgba(255,42,42,.55) !important;
+  color: rgba(233,233,239,.92) !important;
+  box-shadow: none;
+}
+
+body.theme-darth .topbar .btn:hover,
+body.theme-darth .navbar .btn:hover,
+body.theme-darth header .btn:hover{
+  background: rgba(255,42,42,.10) !important;
+  border-color: rgba(255,42,42,.75) !important;
+  box-shadow: 0 0 22px rgba(255,42,42,.22) !important;
+}
+
 /* Dropdowns / popovers */
 body.theme-darth .dropdown-menu,
 body.theme-darth .menu,
@@ -73,6 +108,21 @@ body.theme-darth .config-menu-dropdown a,
 body.theme-darth .cash-menu-dropdown a,
 body.theme-darth .user-menu-dropdown a{
   color: rgba(233,233,239,.90) !important;
+}
+
+body.theme-darth .dropdown-menu .dropdown-item,
+body.theme-darth .menu a{
+  background: transparent !important;
+  color: rgba(233,233,239,.90) !important;
+}
+
+body.theme-darth .dropdown-menu .dropdown-item:hover,
+body.theme-darth .dropdown-menu .dropdown-item:focus,
+body.theme-darth .dropdown-menu .dropdown-item.active,
+body.theme-darth .menu a:hover,
+body.theme-darth .menu a:focus{
+  background: rgba(255,42,42,.10) !important;
+  color: rgba(233,233,239,.95) !important;
 }
 
 body.theme-darth .dropdown-menu a:hover,
@@ -129,6 +179,13 @@ body.theme-darth .btn:disabled{
   opacity: .45;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+body.theme-darth .btn-light,
+body.theme-darth .btn-outline-secondary{
+  background: rgba(255,42,42,.06) !important;
+  border-color: rgba(255,42,42,.55) !important;
+  color: rgba(233,233,239,.92) !important;
 }
 
 /* Inputs / selects */
