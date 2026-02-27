@@ -49,6 +49,50 @@ body.theme-darth .topbar .brand{
   color: rgba(233,233,239,.92) !important;
 }
 
+/* Dropdowns / popovers */
+body.theme-darth .dropdown-menu,
+body.theme-darth .menu,
+body.theme-darth .popover,
+body.theme-darth .menu-panel,
+body.theme-darth .nav-dropdown,
+body.theme-darth .dropdown,
+body.theme-darth .config-menu-dropdown,
+body.theme-darth .cash-menu-dropdown,
+body.theme-darth .user-menu-dropdown{
+  background: rgba(0,0,0,.72) !important;
+  border: 1px solid rgba(255,42,42,.22) !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.55), 0 0 18px rgba(255,42,42,.18) !important;
+  backdrop-filter: blur(10px);
+  color: rgba(233,233,239,.92) !important;
+}
+
+body.theme-darth .dropdown-menu a,
+body.theme-darth .menu a,
+body.theme-darth .popover a,
+body.theme-darth .config-menu-dropdown a,
+body.theme-darth .cash-menu-dropdown a,
+body.theme-darth .user-menu-dropdown a{
+  color: rgba(233,233,239,.90) !important;
+}
+
+body.theme-darth .dropdown-menu a:hover,
+body.theme-darth .menu a:hover,
+body.theme-darth .popover a:hover,
+body.theme-darth .config-menu-dropdown a:hover,
+body.theme-darth .cash-menu-dropdown a:hover,
+body.theme-darth .user-menu-dropdown a:hover{
+  background: rgba(255,42,42,.08) !important;
+}
+
+body.theme-darth .dropdown-menu .divider,
+body.theme-darth .menu .divider,
+body.theme-darth .config-menu-dropdown .divider,
+body.theme-darth .cash-menu-dropdown .divider,
+body.theme-darth .user-menu-dropdown .divider{
+  background: linear-gradient(90deg, transparent, rgba(255,42,42,.25), transparent) !important;
+  height: 1px;
+}
+
 body.theme-darth .muted,
 body.theme-darth .help,
 body.theme-darth .small{
@@ -128,6 +172,25 @@ body.theme-darth .nav-pill.active{
   box-shadow: var(--dv-glow);
 }
 
+/* Chips / badges */
+body.theme-darth .badge,
+body.theme-darth .pill,
+body.theme-darth .tag,
+body.theme-darth .chip{
+  background: rgba(255,42,42,.08) !important;
+  border: 1px solid rgba(255,42,42,.30) !important;
+  color: rgba(233,233,239,.88) !important;
+  box-shadow: 0 0 14px rgba(255,42,42,.12);
+}
+
+body.theme-darth .badge-success,
+body.theme-darth .pill-success,
+body.theme-darth .tag-success{
+  background: rgba(255,42,42,.07) !important;
+  border-color: rgba(255,42,42,.28) !important;
+  color: rgba(233,233,239,.88) !important;
+}
+
 /* Tablas */
 body.theme-darth table{
   background: transparent;
@@ -147,6 +210,15 @@ body.theme-darth tbody td{
   color: rgba(233,233,239,.85);
   border-bottom: 1px solid rgba(255,42,42,.10);
 }
+
+body.theme-darth td{
+  border-bottom: 1px solid rgba(255,42,42,.06) !important;
+}
+
+body.theme-darth thead th{
+  border-bottom: 1px solid rgba(255,42,42,.12) !important;
+}
+
 body.theme-darth tbody tr:hover td{
   background: rgba(255,42,42,.05);
 }
