@@ -8,6 +8,7 @@ require_once __DIR__ . '/../include/stock_sync.php';
 
 header('Content-Type: application/json; charset=utf-8');
 require_login();
+require_permission(hasPerm('sites_test_connection'), 'Sin permiso para probar conexión.');
 ensure_sites_schema();
 
 function respond(array $payload, int $status = 200): void {

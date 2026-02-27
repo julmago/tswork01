@@ -334,6 +334,36 @@ function permission_default_definitions(): array {
       'vendedor' => false,
       'lectura' => false,
     ],
+    'sites_access' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'sites_actions_view' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'sites_edit' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'sites_test_connection' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'sites_bulk_import_export' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
     'cash.view_entries_detail' => [
       'superadmin' => true,
       'admin' => true,

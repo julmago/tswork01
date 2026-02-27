@@ -9,6 +9,7 @@ require_once __DIR__ . '/../include/site_stock_bulk.php';
 
 header('Content-Type: application/json; charset=utf-8');
 require_login();
+require_permission(hasPerm('sites_bulk_import_export'), 'Sin permiso para importar/exportar stock masivo.');
 ensure_sites_schema();
 ensure_stock_schema();
 ensure_stock_sync_schema();
