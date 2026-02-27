@@ -41,6 +41,13 @@ $sections = [
     'tasks_delete' => 'Eliminar tareas',
     'can_delete_messages' => 'Puede eliminar mensajes',
   ],
+  'Sitios' => [
+    'sites_access' => 'Acceso a Sitios',
+    'sites_actions_view' => 'Acciones (columna)',
+    'sites_edit' => 'Modificar',
+    'sites_test_connection' => 'Probar conexión',
+    'sites_bulk_import_export' => 'Importar / Exportar',
+  ],
   'Caja' => [
     'cash.view_entries_detail' => 'Ver detalle de entradas',
     'cash.view_exits_detail' => 'Ver detalle de salidas',

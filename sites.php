@@ -3,6 +3,7 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/include/stock_sync.php';
 require_login();
+require_permission(hasPerm('sites_access'), 'Sin permiso para acceder a Sitios.');
 ensure_sites_schema();
 ensure_stock_sync_schema();
 
@@ -14,6 +15,12 @@ $offset = ($page - 1) * $limit;
 
 $error = '';
 $message = '';
+
+$canSitesActionsView = hasPerm('sites_actions_view');
+$canSitesEdit = hasPerm('sites_edit');
+$canSitesTestConnection = hasPerm('sites_test_connection');
+$canSitesBulkImportExport = hasPerm('sites_bulk_import_export');
+
 
 function normalize_channel_type($value): string {
   $channel = strtoupper(trim((string)$value));
@@ -48,6 +55,7 @@ if (is_post()) {
   $action = post('action');
 
   if ($action === 'create_site') {
+    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
     $name = trim(post('name'));
     $channelType = normalize_channel_type(post('channel_type', 'NONE'));
     $margin = normalize_site_margin_percent_value(post('margin_percent'));
@@ -157,6 +165,7 @@ if (is_post()) {
   }
 
   if ($action === 'update_site') {
+    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
     $id = (int)post('id', '0');
     $name = trim(post('name'));
     $channelType = normalize_channel_type(post('channel_type', 'NONE'));
@@ -268,6 +277,7 @@ if (is_post()) {
   }
 
   if ($action === 'toggle_site') {
+    require_permission($canSitesEdit, 'Sin permiso para modificar sitios.');
     $id = (int)post('id', '0');
     if ($id > 0) {
       try {
@@ -414,6 +424,7 @@ if (is_post() && $error !== '' && in_array(post('action'), ['create_site', 'upda
 }
 
 $showNewForm = get('new') === '1' || $editSite !== null;
+$isEditReadOnly = $editSite && !$canSitesEdit;
 
 $queryBase = [];
 if ($q !== '') $queryBase['q'] = $q;
@@ -441,7 +452,9 @@ $nextPage = min($totalPages, $page + 1);
         <?php if ($showNewForm && !$editSite): ?>
           <a class="btn btn-ghost" href="sites.php<?= $q !== '' ? '?q=' . rawurlencode($q) : '' ?>">Cancelar</a>
         <?php else: ?>
-          <a class="btn" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['new' => 1]))) ?>">Nuevo sitio</a>
+          <?php if ($canSitesEdit): ?>
+            <a class="btn" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['new' => 1]))) ?>">Nuevo sitio</a>
+          <?php endif; ?>
         <?php endif; ?>
       </div>
     </div>
@@ -475,6 +488,7 @@ $nextPage = min($totalPages, $page + 1);
           <?php if ($editSite): ?>
             <input type="hidden" name="id" value="<?= (int)$editSite['id'] ?>">
           <?php endif; ?>
+          <?php if ($isEditReadOnly): ?><fieldset disabled><?php endif; ?>
           <div class="grid" style="grid-template-columns: minmax(240px, 1.2fr) minmax(320px, 1fr) minmax(320px, 1fr); gap: var(--space-4); align-items: end;">
             <label class="form-field">
               <span class="form-label">Nombre del sitio</span>
@@ -616,14 +630,17 @@ $nextPage = min($totalPages, $page + 1);
             </div>
           </div>
 
+          <?php if ($isEditReadOnly): ?></fieldset><?php endif; ?>
           <div class="inline-actions">
             <a class="btn btn-ghost" href="sites.php<?= $q !== '' ? '?q=' . rawurlencode($q) : '' ?>">Cancelar</a>
-            <button class="btn" type="submit"><?= $editSite ? 'Guardar' : 'Agregar' ?></button>
+            <?php if (!$isEditReadOnly && $canSitesEdit): ?>
+              <button class="btn" type="submit"><?= $editSite ? 'Guardar' : 'Agregar' ?></button>
+            <?php endif; ?>
           </div>
         </form>
       </div>
 
-          <?php if ($editSite): ?>
+          <?php if ($editSite && $canSitesTestConnection): ?>
             <div class="card" id="siteSkuTestCard">
               <div class="card-header">
                 <h3 class="card-title">Probar conexión / Probar SKU</h3>
@@ -658,6 +675,7 @@ $nextPage = min($totalPages, $page + 1);
               </div>
             </div>
 
+            <?php if ($canSitesBulkImportExport): ?>
             <div class="card" id="siteStockBulkCard">
               <div class="card-header">
                 <h3 class="card-title">Importar / Exportar stock masivo por SKU</h3>
@@ -700,6 +718,7 @@ $nextPage = min($totalPages, $page + 1);
                 </table>
               </div>
             </div>
+            <?php endif; ?>
           <?php endif; ?>
 
     <?php endif; ?>
@@ -714,12 +733,12 @@ $nextPage = min($totalPages, $page + 1);
               <th>Estado</th>
               <th>Mostrar en lista</th>
               <th>Mostrar en producto</th>
-              <th>Acciones</th>
+              <?php if ($canSitesActionsView): ?><th>Acciones</th><?php endif; ?>
             </tr>
           </thead>
           <tbody>
             <?php if (!$sites): ?>
-              <tr><td colspan="6">Sin sitios.</td></tr>
+              <tr><td colspan="<?= $canSitesActionsView ? '6' : '5' ?>">Sin sitios.</td></tr>
             <?php else: ?>
               <?php foreach ($sites as $site): ?>
                 <tr>
@@ -728,16 +747,20 @@ $nextPage = min($totalPages, $page + 1);
                   <td><?= (int)$site['is_active'] === 1 ? 'Activo' : 'Inactivo' ?></td>
                   <td><?= (int)$site['is_visible'] === 1 ? 'Activo' : 'Inactivo' ?></td>
                   <td><?= (int)$site['show_in_product'] === 1 ? 'Activo' : 'Inactivo' ?></td>
-                  <td>
-                    <div class="inline-actions">
-                      <a class="btn btn-ghost btn-sm" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['page' => $page, 'edit_id' => (int)$site['id']])) ) ?>">Modificar</a>
-                      <form method="post" style="display:inline">
-                        <input type="hidden" name="action" value="toggle_site">
-                        <input type="hidden" name="id" value="<?= (int)$site['id'] ?>">
-                        <button class="btn btn-ghost btn-sm" type="submit"><?= (int)$site['is_active'] === 1 ? 'Inactivar' : 'Activar' ?></button>
-                      </form>
-                    </div>
-                  </td>
+                  <?php if ($canSitesActionsView): ?>
+                    <td>
+                      <div class="inline-actions">
+                        <?php if ($canSitesEdit): ?>
+                          <a class="btn btn-ghost btn-sm" href="sites.php?<?= e(http_build_query(array_merge($queryBase, ['page' => $page, 'edit_id' => (int)$site['id']])) ) ?>">Modificar</a>
+                          <form method="post" style="display:inline">
+                            <input type="hidden" name="action" value="toggle_site">
+                            <input type="hidden" name="id" value="<?= (int)$site['id'] ?>">
+                            <button class="btn btn-ghost btn-sm" type="submit"><?= (int)$site['is_active'] === 1 ? 'Inactivar' : 'Activar' ?></button>
+                          </form>
+                        <?php endif; ?>
+                      </div>
+                    </td>
+                  <?php endif; ?>
                 </tr>
               <?php endforeach; ?>
             <?php endif; ?>
