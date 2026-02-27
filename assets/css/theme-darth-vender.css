@@ -27,11 +27,26 @@ body.theme-darth{
 
 body.theme-darth .card,
 body.theme-darth .panel{
-  background: linear-gradient(180deg, var(--dv-panel), var(--dv-panel-2));
-  border: 1px solid rgba(255,42,42,.18);
+  background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.35)) !important;
+  border: 1px solid rgba(255,42,42,.16) !important;
   border-radius: var(--dv-radius);
   box-shadow: 0 10px 30px rgba(0,0,0,.55), var(--dv-glow);
   backdrop-filter: blur(10px);
+}
+
+/* Header / Nav */
+body.theme-darth .topbar,
+body.theme-darth header,
+body.theme-darth .navbar{
+  background: rgba(0,0,0,.55) !important;
+  border-bottom: 1px solid rgba(255,42,42,.18);
+  backdrop-filter: blur(10px);
+}
+
+body.theme-darth .topbar a,
+body.theme-darth .navbar a,
+body.theme-darth .topbar .brand{
+  color: rgba(233,233,239,.92) !important;
 }
 
 body.theme-darth .muted,
@@ -45,6 +60,9 @@ body.theme-darth .btn{
   border: 1px solid rgba(255,42,42,.55);
   color: var(--dv-text);
   background: rgba(255,42,42,.06);
+  border-color: rgba(255,42,42,.55) !important;
+  color: rgba(233,233,239,.92) !important;
+  background: rgba(255,42,42,.06) !important;
   border-radius: 14px;
   padding: 10px 16px;
   cursor: pointer;
@@ -77,6 +95,8 @@ body.theme-darth .input{
   background: rgba(0,0,0,.35);
   color: var(--dv-text);
   border: 1px solid rgba(255,42,42,.30);
+  background: rgba(0,0,0,.40) !important;
+  border-color: rgba(255,42,42,.28) !important;
   border-radius: 12px;
   padding: 10px 12px;
   outline: none;
@@ -109,14 +129,26 @@ body.theme-darth .nav-pill.active{
 }
 
 /* Tablas */
-body.theme-darth th{
-  border-bottom: 1px solid rgba(255,42,42,.22);
+body.theme-darth table{
+  background: transparent;
 }
-body.theme-darth td{
+body.theme-darth thead th{
+  background: rgba(0,0,0,.45) !important;
+  color: rgba(233,233,239,.88) !important;
+  border-bottom: 1px solid rgba(255,42,42,.22) !important;
+}
+body.theme-darth tbody tr{
+  background: rgba(0,0,0,.22);
+}
+body.theme-darth tbody tr:nth-child(even){
+  background: rgba(0,0,0,.28);
+}
+body.theme-darth tbody td{
+  color: rgba(233,233,239,.85);
   border-bottom: 1px solid rgba(255,42,42,.10);
 }
-body.theme-darth tr:hover td{
-  background: rgba(255,42,42,.04);
+body.theme-darth tbody tr:hover td{
+  background: rgba(255,42,42,.05);
 }
 
 /* Separadores */
