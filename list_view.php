@@ -937,6 +937,22 @@ document.addEventListener('DOMContentLoaded', function(){
     var modal = document.getElementById('scanPickModal');
     var modalBody = document.getElementById('scanPickBody');
     var closeBtn = document.getElementById('scanPickClose');
+    var unknownCodeModal = document.getElementById('unknownCodeModal');
+    var feedback = document.createElement('div');
+    feedback.style.display = 'none';
+    scanForm.parentNode.insertBefore(feedback, scanForm);
+
+    function showScanError(message) {
+      feedback.className = 'alert alert-danger';
+      feedback.textContent = message || 'No se pudo completar el escaneo.';
+      feedback.style.display = '';
+    }
+
+    function clearScanError() {
+      feedback.style.display = 'none';
+      feedback.textContent = '';
+      feedback.className = '';
+    }
 
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>'"]/g, function(ch) {
@@ -964,7 +980,7 @@ document.addEventListener('DOMContentLoaded', function(){
       });
       var data = await res.json();
       if (!data.ok) {
-        alert(data.message || 'No se pudo agregar el producto.');
+        showScanError(data.message || 'No se pudo agregar el producto.');
         return;
       }
       window.location.reload();
@@ -1005,6 +1021,7 @@ document.addEventListener('DOMContentLoaded', function(){
     scanForm.addEventListener('submit', async function(ev) {
       if (!modeSelect || modeSelect.value !== 'add') return;
       ev.preventDefault();
+      clearScanError();
 
       var payload = new URLSearchParams(new FormData(scanForm));
       payload.set('action', 'scan_lookup');
@@ -1016,8 +1033,17 @@ document.addEventListener('DOMContentLoaded', function(){
           body: payload
         });
         var data = await res.json();
+        if (!data.ok && data.reason === 'not_found') {
+          if (unknownCodeModal) {
+            scanForm.submit();
+          } else {
+            showScanError(data.message || 'No se encontró el producto.');
+          }
+          return;
+        }
+
         if (!data.ok) {
-          alert(data.message || 'No se pudo buscar el producto.');
+          showScanError(data.message || 'No se pudo buscar el producto.');
           return;
         }
 
@@ -1028,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
         window.location.reload();
       } catch (err) {
-        alert('No se pudo completar el escaneo.');
+        showScanError('No se pudo completar el escaneo.');
       }
     });
   })();
