@@ -248,7 +248,11 @@ if (is_post() && post('action') === 'scan') {
       }
 
       if (!$found) {
-        $error = 'Producto no encontrado';
+        if ($can_manage_unknown_code) {
+          $message = 'Código no encontrado. Elegí una acción en el popup.';
+        } else {
+          $error = 'Producto no encontrado';
+        }
         $unknown_code = $code;
       } else {
         $pid = (int)$found['product_id'];
@@ -538,6 +542,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
       align-items: center;
       justify-content: center;
       z-index: 9999;
+      padding: 16px;
     }
 
     .dv-modal[hidden] {
@@ -545,8 +550,8 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     }
 
     .dv-modal-card {
-      width: min(980px, 92vw);
-      max-height: 80vh;
+      width: min(1100px, 95vw);
+      max-height: 85vh;
       overflow: auto;
       background: var(--card, #fff);
       border-radius: 10px;
@@ -647,13 +652,20 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     </div>
 
     <?php if ($unknown_code !== '' && $can_manage_unknown_code): ?>
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Código no encontrado</h3>
-          <span class="badge badge-danger"><?= e($unknown_code) ?></span>
-        </div>
+      <div id="unknownCodeModal" class="dv-modal" style="display:none;">
+        <div class="dv-modal-card card">
+          <div class="dv-modal-head" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <h3 style="margin:0;">Código no encontrado</h3>
+              <div class="muted small">Elegí qué hacer con el código escaneado</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="badge badge-danger"><?= e($unknown_code) ?></span>
+              <a class="btn btn-ghost" href="list_view.php?id=<?= (int)$list_id ?>">Cerrar</a>
+            </div>
+          </div>
 
-        <div class="stack">
+          <div class="dv-modal-body stack" style="padding:14px;">
           <?php if ($can_add_code_action): ?>
           <div>
             <h4>1) Asociar a un producto existente</h4>
@@ -733,6 +745,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
               </form>
             </div>
           <?php endif; ?>
+          </div>
         </div>
       </div>
     <?php endif; ?>
@@ -872,6 +885,14 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     <?php endif; ?>
     input.focus();
   })();
+</script>
+<?php endif; ?>
+<?php if ($unknown_code !== '' && $can_manage_unknown_code): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var modal = document.getElementById('unknownCodeModal');
+  if (modal) modal.style.display = 'flex';
+});
 </script>
 <?php endif; ?>
 <?php if ($can_scan_action && $list['status'] === 'open'): ?>
