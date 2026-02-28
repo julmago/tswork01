@@ -249,7 +249,8 @@ if (is_post() && post('action') === 'scan') {
 
       if (!$found) {
         if ($can_manage_unknown_code) {
-          $message = 'Código no encontrado. Elegí una acción en el popup.';
+          $error = '';
+          $message = '';
         } else {
           $error = 'Producto no encontrado';
         }
@@ -584,8 +585,11 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
       <?php endif; ?>
     </div>
 
-    <?php if ($message): ?><div class="alert alert-success"><?= e($message) ?></div><?php endif; ?>
-    <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
+    <?php $hideScanNotFoundAlert = ($unknown_code !== '' && $can_manage_unknown_code); ?>
+    <?php if (!$hideScanNotFoundAlert): ?>
+      <?php if ($message): ?><div class="alert alert-success"><?= e($message) ?></div><?php endif; ?>
+      <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
+    <?php endif; ?>
 
     <div class="card stack">
       <div class="form-row">
