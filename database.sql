@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS product_codes (
   code_type ENUM('BARRA','MPN') NOT NULL DEFAULT 'BARRA',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_product_codes_code (code),
+  KEY idx_product_codes_code (code),
   KEY idx_product_codes_product (product_id),
   CONSTRAINT fk_product_codes_product
     FOREIGN KEY (product_id) REFERENCES products(id)
