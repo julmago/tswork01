@@ -37,6 +37,50 @@ function db(): PDO {
   return $pdo;
 }
 
+function ensure_product_codes_schema(): void {
+  static $ready = false;
+  if ($ready) {
+    return;
+  }
+
+  $pdo = db();
+  $pdo->exec("CREATE TABLE IF NOT EXISTS product_codes (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id INT UNSIGNED NOT NULL,
+    code VARCHAR(120) NOT NULL,
+    code_type ENUM('BARRA','MPN') NOT NULL DEFAULT 'BARRA',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_product_codes_product (product_id),
+    KEY idx_product_codes_code (code),
+    CONSTRAINT fk_product_codes_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+  $uniqueIndexes = [];
+  $st = $pdo->query("SHOW INDEX FROM product_codes WHERE Key_name <> 'PRIMARY'");
+  foreach ($st->fetchAll() as $row) {
+    if ((int)($row['Non_unique'] ?? 1) === 0) {
+      $uniqueIndexes[(string)$row['Key_name']] = true;
+    }
+  }
+
+  foreach (array_keys($uniqueIndexes) as $indexName) {
+    $pdo->exec("ALTER TABLE product_codes DROP INDEX `{$indexName}`");
+  }
+
+  $hasCodeIndex = false;
+  $st = $pdo->query("SHOW INDEX FROM product_codes WHERE Key_name = 'idx_product_codes_code'");
+  if ($st->fetch()) {
+    $hasCodeIndex = true;
+  }
+
+  if (!$hasCodeIndex) {
+    $pdo->exec("ALTER TABLE product_codes ADD INDEX idx_product_codes_code (code)");
+  }
+
+  $ready = true;
+}
+
 function ensure_product_suppliers_schema(): void {
   static $ready = false;
   if ($ready) {

@@ -10,6 +10,7 @@ ensure_brands_schema();
 ensure_sites_schema();
 ensure_stock_schema();
 ensure_stock_sync_schema();
+ensure_product_codes_schema();
 
 $id = (int)get('id','0');
 if ($id <= 0) abort(400, 'Falta id.');
@@ -98,19 +99,94 @@ if (is_post() && post('action') === 'update') {
 
 if (is_post() && post('action') === 'add_code') {
   require_permission($can_add_code);
-  $code = post('code');
+  $is_ajax_request = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+  $code = trim(post('code'));
   $code_type = post('code_type');
+  $confirm_duplicate = post('confirm_duplicate') === '1';
   if (!in_array($code_type, ['BARRA','MPN'], true)) {
     $code_type = 'BARRA';
   }
-  if ($code === '') $error = 'Escaneá un código.';
-  else {
+
+  if ($code === '') {
+    if ($is_ajax_request) {
+      header('Content-Type: application/json; charset=utf-8');
+      echo json_encode([
+        'ok' => false,
+        'message' => 'empty_code',
+        'error' => 'Escaneá un código.',
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    $error = 'Escaneá un código.';
+  } else {
     try {
+      if (in_array($code_type, ['BARRA', 'MPN'], true) && !$confirm_duplicate) {
+        $st = db()->prepare("SELECT pc.product_id, p.sku, p.name
+          FROM product_codes pc
+          JOIN products p ON p.id = pc.product_id
+          WHERE pc.code = ?
+            AND pc.code_type = ?
+            AND pc.product_id <> ?
+          LIMIT 1");
+        $st->execute([$code, $code_type, $id]);
+        $existing_code = $st->fetch();
+
+        if ($existing_code) {
+          if ($is_ajax_request) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+              'ok' => false,
+              'needs_confirm' => true,
+              'message' => 'duplicate_code',
+              'existing' => [
+                'product_id' => (int)$existing_code['product_id'],
+                'sku' => (string)$existing_code['sku'],
+                'name' => (string)$existing_code['name'],
+              ],
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+          }
+
+          $error = 'Ese código ya existe en otro producto.';
+        }
+      }
+
+      if ($error !== '') {
+        if ($is_ajax_request) {
+          header('Content-Type: application/json; charset=utf-8');
+          echo json_encode([
+            'ok' => false,
+            'message' => 'duplicate_code',
+            'error' => $error,
+          ], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
+      }
+
       $st = db()->prepare("INSERT INTO product_codes(product_id, code, code_type) VALUES(?, ?, ?)");
       $st->execute([$id, $code, $code_type]);
+
+      if ($is_ajax_request) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+          'ok' => true,
+          'message' => 'code_added',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+
       $message = 'Código agregado.';
     } catch (Throwable $t) {
-      $error = 'Ese código ya existe en otro producto.';
+      $error = 'No se pudo agregar el código.';
+      if ($is_ajax_request) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+          'ok' => false,
+          'message' => 'insert_error',
+          'error' => $error,
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
     }
   }
 }
@@ -1176,8 +1252,9 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
       </div>
       <div class="card-body product-codes-body">
         <?php if ($can_add_code): ?>
-          <form method="post" class="form-row product-codes-form">
+          <form method="post" class="form-row product-codes-form" id="product-codes-form">
             <input type="hidden" name="action" value="add_code">
+            <input type="hidden" name="confirm_duplicate" value="0" id="product-codes-confirm-duplicate">
             <div class="form-group">
               <label class="form-label">Código</label>
               <input class="form-control" type="text" name="code" placeholder="Escaneá código" autofocus>
@@ -1491,6 +1568,60 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
   });
 
   showTab(initialTab);
+
+  const productCodesForm = document.getElementById('product-codes-form');
+  const productCodesConfirmInput = document.getElementById('product-codes-confirm-duplicate');
+
+  if (productCodesForm && productCodesConfirmInput) {
+    productCodesForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const body = new URLSearchParams(new FormData(productCodesForm));
+
+      const sendRequest = async (confirmDuplicate) => {
+        body.set('confirm_duplicate', confirmDuplicate ? '1' : '0');
+        const response = await fetch(window.location.href, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: body.toString()
+        });
+
+        return response.json();
+      };
+
+      try {
+        let payload = await sendRequest(false);
+
+        if (payload && payload.needs_confirm === true) {
+          const existing = payload.existing || {};
+          const shouldContinue = window.confirm(
+            `Este código ya existe en otro producto:\nSKU: ${existing.sku || '—'}\nNombre: ${existing.name || '—'}\n¿Querés agregarlo de todas formas?`
+          );
+
+          if (!shouldContinue) {
+            return;
+          }
+
+          payload = await sendRequest(true);
+        }
+
+        if (payload && payload.ok === true) {
+          window.location.reload();
+          return;
+        }
+
+        window.alert((payload && payload.error) ? payload.error : 'No se pudo agregar el código.');
+      } catch (error) {
+        window.alert('No se pudo agregar el código.');
+      } finally {
+        productCodesConfirmInput.value = '0';
+      }
+    });
+  }
 
   const saleModeSelect = document.getElementById('sale-mode-select');
   const saleUnitsGroup = document.getElementById('sale-units-group');
