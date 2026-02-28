@@ -339,6 +339,45 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     .dv-modal-body {
       padding: 14px;
     }
+
+    .scan-modal-section {
+      margin-top: 18px;
+    }
+
+    .scan-modal-search-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-top: 12px;
+      margin-bottom: 16px;
+    }
+
+    .scan-modal-results {
+      margin-top: 10px;
+    }
+
+    .scan-modal-divider {
+      margin: 22px 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .10), transparent);
+    }
+
+    .scan-modal-create-grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .scan-modal-create-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .scan-modal-create-actions .btn {
+      min-width: 160px;
+    }
   </style>
 </head>
 <body class="<?= e(app_body_class()) ?>">
@@ -582,44 +621,54 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
           <div class="muted">No tenés permisos para vincular o crear productos desde este modal.</div>
         <?php endif; ?>
         <?php if ($can_add_code_action): ?>
-        <h4>Buscar producto existente</h4>
-        <div class="form-row">
-          <div class="form-group" style="flex:1;">
-            <input type="text" id="scanSearchText" class="form-control" placeholder="SKU, nombre, código de barra o código proveedor">
+        <div class="scan-modal-section">
+          <h4>Buscar producto existente</h4>
+          <div class="scan-modal-search-row">
+            <div class="form-group" style="flex:1; margin:0;">
+              <input type="text" id="scanSearchText" class="form-control" placeholder="SKU, nombre, código de barra o código proveedor">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <button type="button" class="btn" id="scanSearchBtn">Buscar</button>
+            </div>
           </div>
-          <div class="form-group">
-            <button type="button" class="btn" id="scanSearchBtn">Buscar</button>
+          <div class="scan-modal-results">
+            <table class="table">
+              <thead><tr><th>SKU</th><th>Nombre</th><th></th></tr></thead>
+              <tbody id="scanSearchBody"><tr><td colspan="3" class="muted">Buscá un producto para vincular.</td></tr></tbody>
+            </table>
           </div>
         </div>
-        <table class="table">
-          <thead><tr><th>SKU</th><th>Nombre</th><th></th></tr></thead>
-          <tbody id="scanSearchBody"><tr><td colspan="3" class="muted">Buscá un producto para vincular.</td></tr></tbody>
-        </table>
-
         <?php endif; ?>
 
         <?php if ($can_edit_product_action): ?>
-        <h4>Crear producto nuevo</h4>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">SKU</label>
-            <input type="text" id="scanNewSku" class="form-control">
+        <?php if ($can_add_code_action): ?>
+        <div class="scan-modal-divider"></div>
+        <?php endif; ?>
+        <div class="scan-modal-section">
+          <h4>Crear producto nuevo</h4>
+          <div class="scan-modal-create-grid">
+            <div class="form-group">
+              <label class="form-label">SKU</label>
+              <input type="text" id="scanNewSku" class="form-control">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Nombre</label>
+              <input type="text" id="scanNewName" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Marca</label>
+              <select id="scanNewBrand" class="form-control">
+                <option value="0">Sin Marca</option>
+                <?php foreach ($brands as $brand): ?>
+                  <option value="<?= (int)$brand['id'] ?>"><?= e($brand['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
           </div>
-          <div class="form-group" style="flex:1;">
-            <label class="form-label">Nombre</label>
-            <input type="text" id="scanNewName" class="form-control">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Marca</label>
-            <select id="scanNewBrand" class="form-control">
-              <option value="0">Sin Marca</option>
-              <?php foreach ($brands as $brand): ?>
-                <option value="<?= (int)$brand['id'] ?>"><?= e($brand['name']) ?></option>
-              <?php endforeach; ?>
-            </select>
+          <div class="scan-modal-create-actions">
+            <button type="button" class="btn" id="scanCreateBtn">Crear y vincular</button>
           </div>
         </div>
-        <button type="button" class="btn" id="scanCreateBtn">Crear y vincular</button>
         <?php endif; ?>
       </div>
     </div>
