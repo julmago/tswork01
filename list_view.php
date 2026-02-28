@@ -20,6 +20,77 @@ $list = $st->fetch();
 if (!$list) abort(404, 'Listado no encontrado.');
 ensure_stock_sync_schema();
 
+function scan_json_response(array $payload, int $status = 200): void {
+  http_response_code($status);
+  header('Content-Type: application/json; charset=utf-8');
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+function scan_find_products(string $q): array {
+  $q = trim($q);
+  if ($q === '') {
+    return [];
+  }
+
+  $q2 = preg_replace('/\s+/', '', $q);
+  $conditions = [
+    'LOWER(p.sku) = LOWER(:q)',
+    'LOWER(p.sku) = LOWER(:q2)',
+    'LOWER(pc.code) = LOWER(:q)',
+    'LOWER(pc.code) = LOWER(:q2)',
+    'LOWER(ps.supplier_sku) = LOWER(:q)',
+    'LOWER(ps.supplier_sku) = LOWER(:q2)',
+  ];
+
+  $barcodeCols = [];
+  $stCols = db()->prepare("SHOW COLUMNS FROM products LIKE ?");
+  foreach (['barcode', 'ean13'] as $col) {
+    $stCols->execute([$col]);
+    if ($stCols->fetch()) {
+      $barcodeCols[] = $col;
+    }
+  }
+  foreach ($barcodeCols as $col) {
+    $conditions[] = 'LOWER(p.' . $col . ') = LOWER(:q)';
+    $conditions[] = 'LOWER(p.' . $col . ') = LOWER(:q2)';
+  }
+
+  $sql = "
+    SELECT DISTINCT
+      p.id,
+      p.sku,
+      p.name,
+      COALESCE(b.name, p.brand) AS brand,
+      (
+        SELECT MIN(ps2.supplier_sku)
+        FROM product_suppliers ps2
+        WHERE ps2.product_id = p.id
+      ) AS supplier_sku,
+      (
+        SELECT MIN(pc2.code)
+        FROM product_codes pc2
+        WHERE pc2.product_id = p.id
+      ) AS any_code
+    FROM products p
+    LEFT JOIN brands b ON b.id = p.brand_id
+    LEFT JOIN product_codes pc ON pc.product_id = p.id
+    LEFT JOIN product_suppliers ps ON ps.product_id = p.id
+    WHERE " . implode("\n      OR ", $conditions) . "
+    ORDER BY p.name ASC
+    LIMIT 50
+  ";
+  $st = db()->prepare($sql);
+  $st->execute([':q' => $q, ':q2' => $q2]);
+  return $st->fetchAll();
+}
+
+function list_add_product_qty(int $listId, int $productId): void {
+  $st = db()->prepare("INSERT INTO stock_list_items(stock_list_id, product_id, qty) VALUES(?, ?, 1)
+    ON DUPLICATE KEY UPDATE qty = qty + 1, updated_at = NOW()");
+  $st->execute([$listId, $productId]);
+}
+
 $message = (string)get('msg', '');
 $error = '';
 $unknown_code = (string)post('unknown_code','');
@@ -34,6 +105,58 @@ $can_reopen_action = can_reopen_list();
 $can_edit_product_action = can_edit_product();
 $can_add_code_action = can_add_code();
 $can_manage_unknown_code = $can_edit_product_action || $can_add_code_action;
+
+if (is_post() && post('action') === 'scan_lookup') {
+  require_permission($can_scan_action);
+  if ($list['status'] !== 'open') {
+    scan_json_response(['ok' => false, 'reason' => 'closed', 'message' => 'El listado está cerrado. Abrilo para seguir cargando.'], 400);
+  }
+
+  $scan_mode_req = (string)post('scan_mode', 'add');
+  if ($scan_mode_req !== 'add') {
+    scan_json_response(['ok' => false, 'reason' => 'mode_not_supported', 'message' => 'El modo resta usa el flujo normal.'], 400);
+  }
+
+  $code = trim((string)post('code', ''));
+  if ($code === '') {
+    scan_json_response(['ok' => false, 'reason' => 'empty', 'message' => 'Escaneá o pegá un código.'], 400);
+  }
+
+  $matches = scan_find_products($code);
+  if (count($matches) === 0) {
+    scan_json_response(['ok' => false, 'reason' => 'not_found', 'message' => 'No se encontró el producto.']);
+  }
+
+  if (count($matches) === 1) {
+    $pid = (int)$matches[0]['id'];
+    list_add_product_qty($list_id, $pid);
+    scan_json_response(['ok' => true, 'mode' => 'added', 'product' => $matches[0]]);
+  }
+
+  scan_json_response(['ok' => true, 'mode' => 'choose', 'matches' => $matches]);
+}
+
+if (is_post() && post('action') === 'scan_add_choose') {
+  require_permission($can_scan_action);
+  if ($list['status'] !== 'open') {
+    scan_json_response(['ok' => false, 'message' => 'El listado está cerrado. Abrilo para seguir cargando.'], 400);
+  }
+
+  $product_id = (int)post('product_id', '0');
+  if ($product_id <= 0) {
+    scan_json_response(['ok' => false, 'message' => 'Producto inválido.'], 400);
+  }
+
+  $st = db()->prepare('SELECT id, sku, name FROM products WHERE id = ? LIMIT 1');
+  $st->execute([$product_id]);
+  $product = $st->fetch();
+  if (!$product) {
+    scan_json_response(['ok' => false, 'message' => 'Producto inexistente.'], 404);
+  }
+
+  list_add_product_qty($list_id, (int)$product['id']);
+  scan_json_response(['ok' => true, 'mode' => 'added', 'product' => $product]);
+}
 
 // Toggle open/closed
 if (is_post() && post('action') === 'toggle_status') {
@@ -165,10 +288,7 @@ if (is_post() && post('action') === 'scan') {
             $clear_scan_input = true;
           }
         } else {
-          // upsert item
-          $st = db()->prepare("INSERT INTO stock_list_items(stock_list_id, product_id, qty) VALUES(?, ?, 1)
-            ON DUPLICATE KEY UPDATE qty = qty + 1, updated_at = NOW()");
-          $st->execute([$list_id, $pid]);
+          list_add_product_qty($list_id, $pid);
           $message = "Sumado: {$found['sku']} - {$found['name']}";
           $clear_scan_input = true;
         }
@@ -408,6 +528,42 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
 
     .row-link:hover {
       text-decoration: underline;
+    }
+
+    .dv-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .dv-modal[hidden] {
+      display: none;
+    }
+
+    .dv-modal-card {
+      width: min(980px, 92vw);
+      max-height: 80vh;
+      overflow: auto;
+      background: var(--card, #fff);
+      border-radius: 10px;
+      border: 1px solid rgba(127, 127, 127, .25);
+    }
+
+    .dv-modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border-bottom: 1px solid rgba(127, 127, 127, .2);
+    }
+
+    .dv-modal-body {
+      padding: 14px;
     }
   </style>
 </head>
@@ -715,6 +871,141 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
     input.value = '';
     <?php endif; ?>
     input.focus();
+  })();
+</script>
+<?php endif; ?>
+<?php if ($can_scan_action && $list['status'] === 'open'): ?>
+<div id="scanPickModal" class="dv-modal" hidden>
+  <div class="dv-modal-card">
+    <div class="dv-modal-head">
+      <div>
+        <strong>Se encontraron varias coincidencias</strong>
+        <div class="muted small">Elegí el producto correcto para agregar al listado</div>
+      </div>
+      <button type="button" class="btn" id="scanPickClose">Cerrar</button>
+    </div>
+    <div class="dv-modal-body">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>SKU PROVEEDOR</th>
+            <th>NOMBRE</th>
+            <th>MARCA</th>
+            <th>ACCIÓN</th>
+          </tr>
+        </thead>
+        <tbody id="scanPickBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+  (function() {
+    var scanForm = document.querySelector('form input[name="action"][value="scan"]');
+    if (!scanForm) return;
+    scanForm = scanForm.closest('form');
+    if (!scanForm) return;
+
+    var modeSelect = scanForm.querySelector('select[name="scan_mode"]');
+    var codeInput = scanForm.querySelector('input[name="code"]');
+    var modal = document.getElementById('scanPickModal');
+    var modalBody = document.getElementById('scanPickBody');
+    var closeBtn = document.getElementById('scanPickClose');
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>'"]/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','\'':'&#039;','"':'&quot;'})[ch] || ch;
+      });
+    }
+
+    function closeModal() {
+      if (modal) modal.hidden = true;
+      if (modalBody) modalBody.innerHTML = '';
+      if (codeInput) {
+        codeInput.value = '';
+        codeInput.focus();
+      }
+    }
+
+    async function chooseProduct(productId) {
+      var payload = new URLSearchParams();
+      payload.set('action', 'scan_add_choose');
+      payload.set('product_id', String(productId));
+      var res = await fetch('list_view.php?id=<?= (int)$list_id ?>', {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        body: payload
+      });
+      var data = await res.json();
+      if (!data.ok) {
+        alert(data.message || 'No se pudo agregar el producto.');
+        return;
+      }
+      window.location.reload();
+    }
+
+    function openScanPick(matches) {
+      if (!modal || !modalBody) return;
+      modalBody.innerHTML = '';
+      matches.forEach(function(m) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + escapeHtml(m.sku || '') + '</td>' +
+          '<td>' + escapeHtml(m.supplier_sku || '—') + '</td>' +
+          '<td>' + escapeHtml(m.name || '') + '</td>' +
+          '<td>' + escapeHtml(m.brand || '') + '</td>' +
+          '<td><button type="button" class="btn btn-primary" data-pid="' + escapeHtml(m.id) + '">Elegir</button></td>';
+        modalBody.appendChild(tr);
+      });
+
+      modalBody.querySelectorAll('button[data-pid]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          chooseProduct(btn.getAttribute('data-pid'));
+        });
+      });
+
+      modal.hidden = false;
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeModal);
+    }
+    if (modal) {
+      modal.addEventListener('click', function(ev) {
+        if (ev.target === modal) closeModal();
+      });
+    }
+
+    scanForm.addEventListener('submit', async function(ev) {
+      if (!modeSelect || modeSelect.value !== 'add') return;
+      ev.preventDefault();
+
+      var payload = new URLSearchParams(new FormData(scanForm));
+      payload.set('action', 'scan_lookup');
+
+      try {
+        var res = await fetch('list_view.php?id=<?= (int)$list_id ?>', {
+          method: 'POST',
+          headers: {'X-Requested-With': 'XMLHttpRequest'},
+          body: payload
+        });
+        var data = await res.json();
+        if (!data.ok) {
+          alert(data.message || 'No se pudo buscar el producto.');
+          return;
+        }
+
+        if (data.mode === 'choose') {
+          openScanPick(data.matches || []);
+          return;
+        }
+
+        window.location.reload();
+      } catch (err) {
+        alert('No se pudo completar el escaneo.');
+      }
+    });
   })();
 </script>
 <?php endif; ?>
