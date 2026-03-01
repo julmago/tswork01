@@ -324,7 +324,6 @@ try {
         <?php if (can_import_csv()): ?>
           <a class="btn btn-ghost" href="product_import.php">Importar CSV</a>
         <?php endif; ?>
-        <a class="btn btn-ghost" href="suppliers.php">Proveedores</a>
       </div>
     </div>
 
