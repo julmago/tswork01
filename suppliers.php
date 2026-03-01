@@ -234,8 +234,8 @@ if ($action === 'provider_attach_csv_map') {
           <div class="grid grid-3" style="gap: var(--space-4); margin-top: var(--space-3);">
             <label class="form-field">
               <span class="form-label">SKU proveedor</span>
-              <select class="form-control" name="col_sku_provider">
-                <option value="">(Opcional)</option>
+              <select class="form-control" name="col_sku_provider" required>
+                <option value="">Seleccionar</option>
                 <?php foreach ($headers as $header): ?>
                   <option value="<?= e($header) ?>"><?= e($header) ?></option>
                 <?php endforeach; ?>
@@ -331,14 +331,8 @@ if ($action === 'provider_attach_csv_run') {
     if ($path === '' || !is_file($path) || !is_readable($path)) {
       throw new RuntimeException('CSV no encontrado o no legible: ' . $path);
     }
-    if (empty($_POST['col_sku']) || empty($_POST['col_price'])) {
+    if (empty($_POST['col_sku']) || empty($_POST['col_sku_provider']) || empty($_POST['col_price']) || $supplierId <= 0 || $costType === '') {
       throw new RuntimeException('Faltan campos obligatorios del mapeo.');
-    }
-    if ($supplierId <= 0) {
-      throw new RuntimeException('Proveedor inválido.');
-    }
-    if ($costType === '') {
-      throw new RuntimeException('Tipo de costo recibido inválido.');
     }
     if (!in_array($primaryState, [0, 1], true)) {
       throw new RuntimeException('Estado primario inválido.');
@@ -364,12 +358,9 @@ if ($action === 'provider_attach_csv_run') {
     if ($idxPrice === false) {
       throw new RuntimeException('No encuentro columna Precio en header.');
     }
-    $idxSkuProvider = false;
-    if ($selectedSupplierSkuHeaderNorm !== '') {
-      $idxSkuProvider = array_search($selectedSupplierSkuHeaderNorm, $headersNorm, true);
-      if ($idxSkuProvider === false) {
-        throw new RuntimeException('No encuentro columna SKU proveedor en header.');
-      }
+    $idxSkuProvider = array_search($selectedSupplierSkuHeaderNorm, $headersNorm, true);
+    if ($idxSkuProvider === false) {
+      throw new RuntimeException('No encuentro columna SKU proveedor en header.');
     }
 
     $stSupplier = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? LIMIT 1');
@@ -428,7 +419,7 @@ if ($action === 'provider_attach_csv_run') {
         continue;
       }
 
-      $supplierSku = $idxSkuProvider !== false ? trim((string)($row[(int)$idxSkuProvider] ?? '')) : '';
+      $supplierSku = trim((string)($row[(int)$idxSkuProvider] ?? ''));
       $priceInt = parse_price_int($row[(int)$idxPrice] ?? '');
 
       $stProduct->execute([':sku' => $sku]);
