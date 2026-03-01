@@ -57,6 +57,36 @@ function providers_csv_header_and_preview(string $path): array {
   return ['delimiter' => $delimiter, 'headers' => $headers, 'preview' => $preview];
 }
 
+function parse_price_int($raw): ?int {
+  $normalized = supplier_import_normalize_price($raw);
+  if ($normalized === null) {
+    return null;
+  }
+  return (int)$normalized;
+}
+
+function providers_debug_enabled(): bool {
+  if (defined('DEBUG') && DEBUG) {
+    return true;
+  }
+  return (bool)($GLOBALS['config']['debug'] ?? false);
+}
+
+function providers_product_suppliers_columns(PDO $pdo): array {
+  $st = $pdo->query('SHOW COLUMNS FROM product_suppliers');
+  if (!$st) {
+    throw new RuntimeException('No se pudieron leer columnas de product_suppliers.');
+  }
+  $columns = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $name = (string)($row['Field'] ?? '');
+    if ($name !== '') {
+      $columns[$name] = true;
+    }
+  }
+  return $columns;
+}
+
 if ($action === 'provider_attach_csv') {
   require_permission(can_import_csv(), 'Sin permisos para importar proveedores.');
   ?>
@@ -126,7 +156,7 @@ if ($action === 'provider_attach_csv_upload') {
 
   $dir = providers_csv_tmp_dir();
   if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-    abort(500, 'No se pudo crear directorio temporal.');
+    throw new RuntimeException('No se pudo crear directorio temporal: ' . $dir);
   }
 
   $targetPath = $dir . '/provider_attach_' . date('Ymd_His') . '_' . bin2hex(random_bytes(5)) . '.csv';
@@ -267,59 +297,18 @@ if ($action === 'provider_attach_csv_run') {
     redirect('suppliers.php?action=provider_attach_csv_map');
   }
 
+  $error = '';
+  $supplier = ['name' => ''];
   $path = (string)($_SESSION['provider_attach_csv_path'] ?? '');
-  if ($path === '' || !is_file($path)) {
-    redirect('suppliers.php?action=provider_attach_csv');
-  }
-
-  $analysis = providers_csv_header_and_preview($path);
-  $headers = $analysis['headers'];
-  $delimiter = $analysis['delimiter'];
-
+  $delimiter = '';
+  $headers = [];
+  $headersNorm = [];
   $colSku = trim((string)post('col_sku', ''));
   $colSkuProvider = trim((string)post('col_sku_provider', ''));
   $colPrice = trim((string)post('col_price', ''));
   $supplierId = (int)post('supplier_id', '0');
   $costType = trim((string)post('cost_type', ''));
-
-  if ($colSku === '' || !in_array($colSku, $headers, true)) {
-    abort(400, 'Columna SKU inválida.');
-  }
-  if ($colPrice === '' || !in_array($colPrice, $headers, true)) {
-    abort(400, 'Columna Precio inválida.');
-  }
-  if ($colSkuProvider !== '' && !in_array($colSkuProvider, $headers, true)) {
-    abort(400, 'Columna SKU proveedor inválida.');
-  }
-  if ($supplierId <= 0) {
-    abort(400, 'Proveedor inválido.');
-  }
-  if ($costType === '') {
-    abort(400, 'Tipo de costo requerido.');
-  }
-
-  $stSupplier = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? LIMIT 1');
-  $stSupplier->execute([$supplierId]);
-  $supplier = $stSupplier->fetch();
-  if (!$supplier) {
-    abort(404, 'Proveedor no encontrado.');
-  }
-
-  $idxSku = array_search($colSku, $headers, true);
-  $idxSkuProvider = $colSkuProvider !== '' ? array_search($colSkuProvider, $headers, true) : false;
-  $idxPrice = array_search($colPrice, $headers, true);
-
-  $fh = fopen($path, 'rb');
-  if ($fh === false) {
-    abort(500, 'No se pudo abrir el CSV.');
-  }
-  fgetcsv($fh, 0, $delimiter);
-
-  $stProduct = $pdo->prepare('SELECT id FROM products WHERE sku = :sku LIMIT 1');
-  $stCountActive = $pdo->prepare('SELECT COUNT(*) FROM product_suppliers WHERE product_id = :pid AND is_active = 1');
-  $stFindLink = $pdo->prepare('SELECT id, is_active FROM product_suppliers WHERE product_id = :pid AND supplier_id = :sid LIMIT 1');
-  $stUpdate = $pdo->prepare('UPDATE product_suppliers SET supplier_sku = :supplier_sku, cost_received = :cost_received, cost_type_received = :cost_type_received WHERE id = :id');
-  $stInsert = $pdo->prepare('INSERT INTO product_suppliers (product_id, supplier_id, supplier_sku, cost_received, cost_type_received, is_active) VALUES (:product_id, :supplier_id, :supplier_sku, :cost_received, :cost_type_received, :is_active)');
+  $firstParsedRow = null;
 
   $totalRows = 0;
   $newLinks = 0;
@@ -328,58 +317,163 @@ if ($action === 'provider_attach_csv_run') {
   $newActive = 0;
   $newInactive = 0;
 
-  while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
-    $totalRows++;
-    $sku = trim((string)($row[(int)$idxSku] ?? ''));
-    if ($sku === '') {
-      continue;
+  try {
+    if ($path === '' || !is_file($path) || !is_readable($path)) {
+      throw new RuntimeException('CSV no encontrado o no legible: ' . $path);
+    }
+    if (empty($_POST['col_sku']) || empty($_POST['col_price'])) {
+      throw new RuntimeException('Faltan campos obligatorios del mapeo.');
+    }
+    if ($supplierId <= 0) {
+      throw new RuntimeException('Proveedor inválido.');
+    }
+    if ($costType === '') {
+      throw new RuntimeException('Tipo de costo recibido inválido.');
     }
 
-    $supplierSku = $idxSkuProvider !== false ? trim((string)($row[(int)$idxSkuProvider] ?? '')) : '';
-    $rawPrice = $row[(int)$idxPrice] ?? '';
-    $normalizedPrice = supplier_import_normalize_price($rawPrice);
-    $priceInteger = $normalizedPrice === null ? null : (int)round($normalizedPrice, 0);
+    $analysis = providers_csv_header_and_preview($path);
+    $headers = $analysis['headers'];
+    $delimiter = $analysis['delimiter'];
+    if (!$headers || count($headers) === 0) {
+      throw new RuntimeException('CSV sin encabezados');
+    }
+    $headersNorm = array_map(static fn($h) => mb_strtolower(trim((string)$h)), $headers);
 
-    $stProduct->execute([':sku' => $sku]);
-    $productId = (int)$stProduct->fetchColumn();
-    if ($productId <= 0) {
-      $notFound++;
-      continue;
+    $selectedSkuHeaderNorm = mb_strtolower($colSku);
+    $selectedPriceHeaderNorm = mb_strtolower($colPrice);
+    $selectedSupplierSkuHeaderNorm = $colSkuProvider !== '' ? mb_strtolower($colSkuProvider) : '';
+
+    $idxSku = array_search($selectedSkuHeaderNorm, $headersNorm, true);
+    if ($idxSku === false) {
+      throw new RuntimeException('No encuentro columna SKU en header.');
+    }
+    $idxPrice = array_search($selectedPriceHeaderNorm, $headersNorm, true);
+    if ($idxPrice === false) {
+      throw new RuntimeException('No encuentro columna Precio en header.');
+    }
+    $idxSkuProvider = false;
+    if ($selectedSupplierSkuHeaderNorm !== '') {
+      $idxSkuProvider = array_search($selectedSupplierSkuHeaderNorm, $headersNorm, true);
+      if ($idxSkuProvider === false) {
+        throw new RuntimeException('No encuentro columna SKU proveedor en header.');
+      }
     }
 
-    $stFindLink->execute([':pid' => $productId, ':sid' => $supplierId]);
-    $existing = $stFindLink->fetch();
-    if ($existing) {
-      $stUpdate->execute([
-        ':supplier_sku' => $supplierSku !== '' ? $supplierSku : null,
-        ':cost_received' => $priceInteger,
-        ':cost_type_received' => $costType,
-        ':id' => (int)$existing['id'],
-      ]);
-      $updatedLinks++;
-      continue;
+    $stSupplier = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? LIMIT 1');
+    $stSupplier->execute([$supplierId]);
+    $supplier = $stSupplier->fetch();
+    if (!$supplier) {
+      throw new RuntimeException('Proveedor no encontrado.');
     }
 
-    $stCountActive->execute([':pid' => $productId]);
-    $activeCount = (int)$stCountActive->fetchColumn();
-    $isActive = $activeCount === 0 ? 1 : 0;
-    if ($isActive === 1) {
-      $newActive++;
-    } else {
-      $newInactive++;
+    $columns = providers_product_suppliers_columns($pdo);
+    $supplierSkuColumn = isset($columns['supplier_sku']) ? 'supplier_sku' : (isset($columns['supplier_code']) ? 'supplier_code' : null);
+    if ($supplierSkuColumn === null) {
+      throw new RuntimeException('No existe columna para SKU de proveedor (supplier_sku/supplier_code).');
+    }
+    $costColumn = isset($columns['cost_received']) ? 'cost_received' : (isset($columns['supplier_cost']) ? 'supplier_cost' : (isset($columns['cost_unitario']) ? 'cost_unitario' : null));
+    if ($costColumn === null) {
+      throw new RuntimeException('No existe columna para costo (cost_received/supplier_cost/cost_unitario).');
+    }
+    $costTypeColumn = isset($columns['cost_type_received']) ? 'cost_type_received' : (isset($columns['cost_type']) ? 'cost_type' : null);
+    if ($costTypeColumn === null) {
+      throw new RuntimeException('No existe columna para tipo de costo (cost_type_received/cost_type).');
     }
 
-    $stInsert->execute([
-      ':product_id' => $productId,
-      ':supplier_id' => $supplierId,
-      ':supplier_sku' => $supplierSku !== '' ? $supplierSku : null,
-      ':cost_received' => $priceInteger,
-      ':cost_type_received' => $costType,
-      ':is_active' => $isActive,
-    ]);
-    $newLinks++;
+    $fh = fopen($path, 'rb');
+    if ($fh === false) {
+      throw new RuntimeException('No se pudo abrir el CSV.');
+    }
+    $readHeaders = fgetcsv($fh, 0, $delimiter);
+    if ($readHeaders === false) {
+      fclose($fh);
+      throw new RuntimeException('CSV sin encabezados');
+    }
+
+    $stProduct = $pdo->prepare('SELECT id FROM products WHERE sku = :sku LIMIT 1');
+    $stCountActive = $pdo->prepare('SELECT COUNT(*) FROM product_suppliers WHERE product_id = :pid AND is_active = 1');
+    $stFindLink = $pdo->prepare('SELECT id, is_active FROM product_suppliers WHERE product_id = :pid AND supplier_id = :sid LIMIT 1');
+
+    $updateSql = "UPDATE product_suppliers SET {$supplierSkuColumn} = :supplier_sku, {$costColumn} = :cost_value, {$costTypeColumn} = :cost_type WHERE id = :id";
+    $insertSql = "INSERT INTO product_suppliers (product_id, supplier_id, {$supplierSkuColumn}, {$costColumn}, {$costTypeColumn}, is_active) VALUES (:product_id, :supplier_id, :supplier_sku, :cost_value, :cost_type, :is_active)";
+    try {
+      $stUpdate = $pdo->prepare($updateSql);
+      $stInsert = $pdo->prepare($insertSql);
+    } catch (Throwable $e) {
+      throw new RuntimeException('Error preparando SQL dinámico: ' . $e->getMessage() . ' | UPDATE: ' . $updateSql . ' | INSERT: ' . $insertSql, 0, $e);
+    }
+
+    while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
+      $totalRows++;
+      if ($firstParsedRow === null) {
+        $firstParsedRow = $row;
+      }
+      $sku = trim((string)($row[(int)$idxSku] ?? ''));
+      if ($sku === '') {
+        continue;
+      }
+
+      $supplierSku = $idxSkuProvider !== false ? trim((string)($row[(int)$idxSkuProvider] ?? '')) : '';
+      $priceInt = parse_price_int($row[(int)$idxPrice] ?? '');
+
+      $stProduct->execute([':sku' => $sku]);
+      $productId = (int)$stProduct->fetchColumn();
+      if ($productId <= 0) {
+        $notFound++;
+        continue;
+      }
+
+      $stFindLink->execute([':pid' => $productId, ':sid' => $supplierId]);
+      $existing = $stFindLink->fetch();
+      if ($existing) {
+        try {
+          $stUpdate->execute([
+            ':supplier_sku' => $supplierSku !== '' ? $supplierSku : null,
+            ':cost_value' => $priceInt,
+            ':cost_type' => $costType,
+            ':id' => (int)$existing['id'],
+          ]);
+        } catch (Throwable $e) {
+          throw new RuntimeException('Error en UPDATE product_suppliers: ' . $e->getMessage() . ' | SQL: ' . $updateSql, 0, $e);
+        }
+        $updatedLinks++;
+        continue;
+      }
+
+      $stCountActive->execute([':pid' => $productId]);
+      $activeCount = (int)$stCountActive->fetchColumn();
+      $isActive = $activeCount === 0 ? 1 : 0;
+      if ($isActive === 1) {
+        $newActive++;
+      } else {
+        $newInactive++;
+      }
+
+      try {
+        $stInsert->execute([
+          ':product_id' => $productId,
+          ':supplier_id' => $supplierId,
+          ':supplier_sku' => $supplierSku !== '' ? $supplierSku : null,
+          ':cost_value' => $priceInt,
+          ':cost_type' => $costType,
+          ':is_active' => $isActive,
+        ]);
+      } catch (Throwable $e) {
+        throw new RuntimeException('Error en INSERT product_suppliers: ' . $e->getMessage() . ' | SQL: ' . $insertSql, 0, $e);
+      }
+      $newLinks++;
+    }
+    fclose($fh);
+  } catch (Throwable $e) {
+    error_log("provider_attach_csv_run ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+    if (defined('DEBUG') && DEBUG) {
+      die('<pre>provider_attach_csv_run ERROR:' . "\n" . e($e->getMessage()) . "\n\n" . e($e->getTraceAsString()) . '</pre>');
+    }
+    if (providers_debug_enabled()) {
+      die('<pre>provider_attach_csv_run ERROR:' . "\n" . e($e->getMessage()) . "\n\n" . e($e->getTraceAsString()) . '</pre>');
+    }
+    $error = 'Error al importar CSV. Revisá el log del servidor.';
   }
-  fclose($fh);
   ?>
   <!doctype html>
   <html>
@@ -399,6 +493,9 @@ if ($action === 'provider_attach_csv_run') {
         </div>
       </div>
       <div class="card stack">
+        <?php if ($error !== ''): ?>
+          <div class="alert alert-danger"><?= e($error) ?></div>
+        <?php endif; ?>
         <ul>
           <li>Total filas: <?= (int)$totalRows ?></li>
           <li>Vínculos nuevos: <?= (int)$newLinks ?></li>
@@ -407,6 +504,18 @@ if ($action === 'provider_attach_csv_run') {
           <li>Nuevos activos: <?= (int)$newActive ?></li>
           <li>Nuevos inactivos: <?= (int)$newInactive ?></li>
         </ul>
+        <?php if (providers_debug_enabled()): ?>
+          <div class="card" style="margin:0;">
+            <h3 style="margin-top:0;">Debug</h3>
+            <ul>
+              <li>path: <code><?= e($path) ?></code></li>
+              <li>delimiter detectado: <code><?= e($delimiter) ?></code></li>
+              <li>headers detectados: <code><?= e(json_encode($headers, JSON_UNESCAPED_UNICODE) ?: '[]') ?></code></li>
+              <li>columnas seleccionadas: <code><?= e(json_encode(['col_sku' => $colSku, 'col_sku_provider' => $colSkuProvider, 'col_price' => $colPrice], JSON_UNESCAPED_UNICODE) ?: '{}') ?></code></li>
+              <li>primera fila parseada: <code><?= e(json_encode($firstParsedRow, JSON_UNESCAPED_UNICODE) ?: 'null') ?></code></li>
+            </ul>
+          </div>
+        <?php endif; ?>
         <div class="inline-actions">
           <a class="btn" href="suppliers.php">Volver</a>
         </div>
