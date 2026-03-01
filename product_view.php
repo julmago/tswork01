@@ -767,47 +767,6 @@ if ($st) {
   $site_prices = $st->fetchAll();
 }
 
-$price_debug_rows = [];
-if ($active_supplier_link) {
-  $debug_supplier_cost = $active_supplier_link['supplier_cost'] ?? null;
-  $debug_effective_unit_cost = get_effective_unit_cost($active_supplier_link, [
-    'import_default_units_per_pack' => $active_supplier_link['supplier_default_units_per_pack'] ?? 0,
-    'discount_percent' => $active_supplier_link['supplier_discount_percent'] ?? 0,
-  ]);
-  $debug_cost_for_mode = get_cost_for_product_mode($debug_effective_unit_cost, $product);
-  $debug_discount_percent = (float)($active_supplier_link['supplier_discount_percent'] ?? 0);
-  $debug_base_percent = (float)($active_supplier_link['supplier_base_percent'] ?? 0);
-
-  foreach ($site_prices as $site_debug_row) {
-    $site_name = trim((string)($site_debug_row['name'] ?? ''));
-    if (strcasecmp($site_name, '01TSM') !== 0) {
-      continue;
-    }
-
-    $site_margin_percent = (float)($site_debug_row['margin_percent'] ?? 0);
-    $debug_raw_cost = null;
-    $debug_final_before_round = null;
-
-    if ($debug_cost_for_mode !== null) {
-      $debug_raw_cost = $debug_cost_for_mode * (1 - ($debug_discount_percent / 100));
-      $debug_final_before_round = $debug_raw_cost
-        * (1 + ($debug_base_percent / 100))
-        * (1 + ($site_margin_percent / 100));
-    }
-
-    $price_debug_rows[(int)$site_debug_row['id']] = [
-      'supplier_cost' => $debug_supplier_cost,
-      'unit_cost' => $debug_effective_unit_cost,
-      'cost_for_mode' => $debug_cost_for_mode,
-      'discount_percent' => $debug_discount_percent,
-      'base_percent' => $debug_base_percent,
-      'site_margin_percent' => $site_margin_percent,
-      'raw_cost' => $debug_raw_cost,
-      'final_before_round' => $debug_final_before_round,
-    ];
-  }
-}
-
 $active_supplier_name = '—';
 foreach ($supplier_links as $supplier_link) {
   if ((int)($supplier_link['is_active'] ?? 0) === 1) {
@@ -1491,12 +1450,11 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
                 <th>mostrar en lista</th>
                 <th>mostrar en producto</th>
                 <th>precio</th>
-                <th class="visually-hidden">debug precio</th>
               </tr>
             </thead>
             <tbody>
               <?php if (!$site_prices): ?>
-                <tr><td colspan="7">Sin sitios configurados para producto.</td></tr>
+                <tr><td colspan="6">Sin sitios configurados para producto.</td></tr>
               <?php else: ?>
                 <?php foreach ($site_prices as $site): ?>
                   <tr>
@@ -1533,16 +1491,6 @@ $initial_tab = in_array($tab_param, $allowed_tabs, true) ? $tab_param : 'resumen
                               echo e((string)(int)$final_price);
                             }
                           }
-                        }
-                      ?>
-                    </td>
-                    <td class="visually-hidden">
-                      <?php
-                        $debug_row = $price_debug_rows[(int)$site['id']] ?? null;
-                        if ($debug_row) {
-                          echo e(json_encode($debug_row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-                        } else {
-                          echo '—';
                         }
                       ?>
                     </td>
