@@ -202,28 +202,10 @@ if ($action === 'provider_attach_csv_map') {
 
       <div class="card stack">
         <form method="post" action="suppliers.php?action=provider_attach_csv_run" class="stack">
-          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4);">
+          <div class="grid grid-3" style="gap: var(--space-4);">
             <label class="form-field">
               <span class="form-label">SKU (TSWork)</span>
               <select class="form-control" name="col_sku" required>
-                <option value="">Seleccionar</option>
-                <?php foreach ($headers as $header): ?>
-                  <option value="<?= e($header) ?>"><?= e($header) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <label class="form-field">
-              <span class="form-label">SKU proveedor</span>
-              <select class="form-control" name="col_sku_provider">
-                <option value="">(Opcional)</option>
-                <?php foreach ($headers as $header): ?>
-                  <option value="<?= e($header) ?>"><?= e($header) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <label class="form-field">
-              <span class="form-label">Precio</span>
-              <select class="form-control" name="col_price" required>
                 <option value="">Seleccionar</option>
                 <?php foreach ($headers as $header): ?>
                   <option value="<?= e($header) ?>"><?= e($header) ?></option>
@@ -246,6 +228,33 @@ if ($action === 'provider_attach_csv_map') {
                 <?php foreach ($costTypes as $value => $label): ?>
                   <option value="<?= e($value) ?>"><?= e($label) ?></option>
                 <?php endforeach; ?>
+              </select>
+            </label>
+          </div>
+          <div class="grid grid-3" style="gap: var(--space-4); margin-top: var(--space-3);">
+            <label class="form-field">
+              <span class="form-label">SKU proveedor</span>
+              <select class="form-control" name="col_sku_provider">
+                <option value="">(Opcional)</option>
+                <?php foreach ($headers as $header): ?>
+                  <option value="<?= e($header) ?>"><?= e($header) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">Precio</span>
+              <select class="form-control" name="col_price" required>
+                <option value="">Seleccionar</option>
+                <?php foreach ($headers as $header): ?>
+                  <option value="<?= e($header) ?>"><?= e($header) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">Estado Primario</span>
+              <select class="form-control" name="primary_state" required>
+                <option value="0" selected>Inactivo</option>
+                <option value="1">Activo</option>
               </select>
             </label>
           </div>
@@ -308,6 +317,7 @@ if ($action === 'provider_attach_csv_run') {
   $colPrice = trim((string)post('col_price', ''));
   $supplierId = (int)post('supplier_id', '0');
   $costType = trim((string)post('cost_type', ''));
+  $primaryState = (int)($_POST['primary_state'] ?? 0);
   $firstParsedRow = null;
 
   $totalRows = 0;
@@ -329,6 +339,9 @@ if ($action === 'provider_attach_csv_run') {
     }
     if ($costType === '') {
       throw new RuntimeException('Tipo de costo recibido inválido.');
+    }
+    if (!in_array($primaryState, [0, 1], true)) {
+      throw new RuntimeException('Estado primario inválido.');
     }
 
     $analysis = providers_csv_header_and_preview($path);
@@ -391,8 +404,10 @@ if ($action === 'provider_attach_csv_run') {
     }
 
     $stProduct = $pdo->prepare('SELECT id FROM products WHERE sku = :sku LIMIT 1');
-    $stCountActive = $pdo->prepare('SELECT COUNT(*) FROM product_suppliers WHERE product_id = :pid AND is_active = 1');
+    $stFindActive = $pdo->prepare('SELECT id, supplier_id FROM product_suppliers WHERE product_id = :pid AND is_active = 1 LIMIT 1');
+    $stDeactivateActive = $pdo->prepare('UPDATE product_suppliers SET is_active = 0 WHERE product_id = :pid AND is_active = 1');
     $stFindLink = $pdo->prepare('SELECT id, is_active FROM product_suppliers WHERE product_id = :pid AND supplier_id = :sid LIMIT 1');
+    $stActivateLink = $pdo->prepare('UPDATE product_suppliers SET is_active = 1 WHERE id = :id');
 
     $updateSql = "UPDATE product_suppliers SET {$supplierSkuColumn} = :supplier_sku, {$costColumn} = :cost_value, {$costTypeColumn} = :cost_type WHERE id = :id";
     $insertSql = "INSERT INTO product_suppliers (product_id, supplier_id, {$supplierSkuColumn}, {$costColumn}, {$costTypeColumn}, is_active) VALUES (:product_id, :supplier_id, :supplier_sku, :cost_value, :cost_type, :is_active)";
@@ -425,6 +440,10 @@ if ($action === 'provider_attach_csv_run') {
 
       $stFindLink->execute([':pid' => $productId, ':sid' => $supplierId]);
       $existing = $stFindLink->fetch();
+      $stFindActive->execute([':pid' => $productId]);
+      $activeLink = $stFindActive->fetch();
+      $hasActive = $activeLink !== false;
+
       if ($existing) {
         try {
           $stUpdate->execute([
@@ -436,13 +455,39 @@ if ($action === 'provider_attach_csv_run') {
         } catch (Throwable $e) {
           throw new RuntimeException('Error en UPDATE product_suppliers: ' . $e->getMessage() . ' | SQL: ' . $updateSql, 0, $e);
         }
+
+        if ($primaryState === 1) {
+          try {
+            $stDeactivateActive->execute([':pid' => $productId]);
+            $stActivateLink->execute([':id' => (int)$existing['id']]);
+          } catch (Throwable $e) {
+            throw new RuntimeException('Error ajustando estado activo en UPDATE: ' . $e->getMessage(), 0, $e);
+          }
+        } elseif (!$hasActive) {
+          try {
+            $stActivateLink->execute([':id' => (int)$existing['id']]);
+          } catch (Throwable $e) {
+            throw new RuntimeException('Error activando vínculo existente sin activo previo: ' . $e->getMessage(), 0, $e);
+          }
+        }
+
         $updatedLinks++;
         continue;
       }
 
-      $stCountActive->execute([':pid' => $productId]);
-      $activeCount = (int)$stCountActive->fetchColumn();
-      $isActive = $activeCount === 0 ? 1 : 0;
+      if ($primaryState === 1) {
+        try {
+          $stDeactivateActive->execute([':pid' => $productId]);
+        } catch (Throwable $e) {
+          throw new RuntimeException('Error desactivando vínculo activo previo: ' . $e->getMessage(), 0, $e);
+        }
+      }
+
+      $isActive = 0;
+      if ($primaryState === 1 || !$hasActive) {
+        $isActive = 1;
+      }
+
       if ($isActive === 1) {
         $newActive++;
       } else {
