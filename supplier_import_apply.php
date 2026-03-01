@@ -69,12 +69,17 @@ try {
       continue;
     }
 
-    if (!isset($row['raw_price']) || $row['raw_price'] === null || (float)$row['raw_price'] < 0) {
+    $hasNormalizedUnitCost = isset($row['normalized_unit_cost']) && $row['normalized_unit_cost'] !== null;
+    $sourceCost = $hasNormalizedUnitCost
+      ? (float)$row['normalized_unit_cost']
+      : (isset($row['raw_price']) ? (float)$row['raw_price'] : null);
+
+    if ($sourceCost === null || $sourceCost < 0) {
       continue;
     }
 
-    // Persistimos siempre el costo bruto del proveedor (CSV) sin base/descuento.
-    $supplierCostToSave = (int)round((float)$row['raw_price'], 0);
+    // Persistimos costo normalizado (con descuentos/base); si no existe, usamos costo bruto.
+    $supplierCostToSave = (int)round($sourceCost, 0);
 
     foreach ($matches as $match) {
       $psId = (int)$match['id'];
