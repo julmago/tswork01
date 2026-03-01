@@ -73,11 +73,8 @@ try {
       continue;
     }
 
-    $extraDiscount = isset($run['extra_discount_percent']) ? (float)$run['extra_discount_percent'] : 0.0;
-    $supplierDiscount = isset($run['supplier_discount_percent']) ? (float)$run['supplier_discount_percent'] : 0.0;
-    $priceAfterSupplierDiscount = (float)$row['raw_price'] * (1 - ($supplierDiscount / 100));
-    $priceAfterFileDiscount = $priceAfterSupplierDiscount * (1 - ($extraDiscount / 100));
-    $supplierCostToSave = (int)round($priceAfterFileDiscount, 0);
+    // Persistimos siempre el costo bruto del proveedor (CSV) sin base/descuento.
+    $supplierCostToSave = (int)round((float)$row['raw_price'], 0);
 
     foreach ($matches as $match) {
       $psId = (int)$match['id'];
