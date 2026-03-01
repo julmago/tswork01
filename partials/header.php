@@ -8,6 +8,7 @@ $can_manage_tasks_settings = hasPerm('tasks_settings');
 $can_manage_prestashop = hasPerm('menu_config_prestashop');
 $can_view_design = hasPerm('menu_design');
 $can_sites_access = hasPerm('sites_access');
+$can_suppliers_access = hasPerm('suppliers_attach_csv');
 $can_cashbox_access = false;
 $can_cashbox_manage = hasPerm('cashbox_manage_boxes');
 $can_configure_bills = hasAnyCashboxPerm('can_configure_bills');
@@ -60,6 +61,7 @@ $can_cashbox_access = !empty($cashboxes);
       <nav class="nav nav-primary">
         <a class="nav-link" href="<?= url_path('dashboard.php') ?>">Listas</a>
         <a class="nav-link" href="<?= url_path('product_list.php') ?>">Productos</a>
+        <?php if ($can_suppliers_access): ?><a class="nav-link" href="<?= url_path('suppliers.php') ?>">Proveedores</a><?php endif; ?>
         <?php if ($can_sites_access): ?><a class="nav-link" href="<?= url_path('sites.php') ?>">Sitios</a><?php endif; ?>
         <a class="nav-link" href="<?= url_path('tasks_all.php') ?>">Tarea<?php if ($new_tasks_count > 0): ?> <span class="badge badge-danger"><?= (int)$new_tasks_count ?></span><?php endif; ?></a>
         <a class="nav-link" href="<?= url_path('inbox.php') ?>">Mensajería<?php if ($unread_notifications_count > 0): ?> <span class="badge badge-danger"><?= (int)$unread_notifications_count ?></span><?php endif; ?></a>
