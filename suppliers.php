@@ -88,7 +88,7 @@ function providers_product_suppliers_columns(PDO $pdo): array {
 }
 
 if ($action === 'provider_attach_csv') {
-  require_permission(can_import_csv(), 'Sin permisos para importar proveedores.');
+  require_permission(can_suppliers_attach_csv(), 'Sin permisos para agregar proveedores por CSV.');
   ?>
   <!doctype html>
   <html>
@@ -128,7 +128,7 @@ if ($action === 'provider_attach_csv') {
 }
 
 if ($action === 'provider_attach_csv_upload') {
-  require_permission(can_import_csv(), 'Sin permisos para importar proveedores.');
+  require_permission(can_suppliers_attach_csv(), 'Sin permisos para agregar proveedores por CSV.');
   if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     redirect('suppliers.php?action=provider_attach_csv');
   }
@@ -169,7 +169,7 @@ if ($action === 'provider_attach_csv_upload') {
 }
 
 if ($action === 'provider_attach_csv_map') {
-  require_permission(can_import_csv(), 'Sin permisos para importar proveedores.');
+  require_permission(can_suppliers_attach_csv(), 'Sin permisos para agregar proveedores por CSV.');
   $path = (string)($_SESSION['provider_attach_csv_path'] ?? '');
   if ($path === '' || !is_file($path)) {
     redirect('suppliers.php?action=provider_attach_csv');
@@ -292,7 +292,7 @@ if ($action === 'provider_attach_csv_map') {
 }
 
 if ($action === 'provider_attach_csv_run') {
-  require_permission(can_import_csv(), 'Sin permisos para importar proveedores.');
+  require_permission(can_suppliers_attach_csv(), 'Sin permisos para agregar proveedores por CSV.');
   if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     redirect('suppliers.php?action=provider_attach_csv_map');
   }
@@ -597,7 +597,9 @@ $nextPage = min($totalPages, $page + 1);
       </div>
       <div class="inline-actions">
         <a class="btn" href="suppliers_new.php">Nuevo proveedor</a>
-        <a class="btn" href="suppliers.php?action=provider_attach_csv">Agregar proveedor</a>
+        <?php if (can_suppliers_attach_csv()): ?>
+          <a class="btn" href="suppliers.php?action=provider_attach_csv">Agregar proveedor</a>
+        <?php endif; ?>
       </div>
     </div>
 

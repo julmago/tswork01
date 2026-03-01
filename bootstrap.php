@@ -364,6 +364,12 @@ function permission_default_definitions(): array {
       'vendedor' => false,
       'lectura' => false,
     ],
+    'suppliers_attach_csv' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
     'cash.view_entries_detail' => [
       'superadmin' => true,
       'admin' => true,
@@ -646,6 +652,10 @@ function hasAnyCashboxPerm(string $perm_key): bool {
 
 function can_import_csv(): bool {
   return hasPerm('menu_import_csv');
+}
+
+function can_suppliers_attach_csv(): bool {
+  return hasPerm('suppliers_attach_csv');
 }
 
 function can_sync_prestashop(): bool {
