@@ -48,6 +48,9 @@ $sections = [
     'sites_test_connection' => 'Probar conexión',
     'sites_bulk_import_export' => 'Importar / Exportar',
   ],
+  'Proveedores' => [
+    'suppliers_attach_csv' => 'Agregar proveedor (CSV)',
+  ],
   'Caja' => [
     'cash.view_entries_detail' => 'Ver detalle de entradas',
     'cash.view_exits_detail' => 'Ver detalle de salidas',
