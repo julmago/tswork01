@@ -50,20 +50,30 @@ $invalidExpr = $hasStatus
   ? "status = 'INVALID'"
   : ($hasIsValid ? 'is_valid = 0' : '0=1');
 
-$summarySt = db()->prepare("SELECT
+$updatedExpr = '0 AS updated_total';
+if ($supplierSkuColumn !== null) {
+  $updatedExpr = "COALESCE(SUM(CASE WHEN {$matchExpr} THEN (
+    SELECT COUNT(*) FROM product_suppliers psx
+    WHERE psx.supplier_id = ?
+      AND psx.supplier_sku = supplier_import_rows.$supplierSkuColumn
+      AND psx.is_active = 1
+  ) ELSE 0 END), 0) AS updated_total";
+}
+
+$summarySql = "SELECT
   COUNT(*) AS total,
   SUM(CASE WHEN {$matchExpr} THEN 1 ELSE 0 END) AS matched,
   SUM(CASE WHEN {$unmatchedExpr} THEN 1 ELSE 0 END) AS unmatched,
   SUM(CASE WHEN {$duplicatesExpr} THEN 1 ELSE 0 END) AS duplicates,
   SUM(CASE WHEN {$invalidExpr} THEN 1 ELSE 0 END) AS invalid,
-  COALESCE(SUM(CASE WHEN {$matchExpr} THEN (
-    SELECT COUNT(*) FROM product_suppliers psx
-    WHERE psx.supplier_id = ?
-      AND psx.supplier_sku = supplier_import_rows.supplier_sku
-      AND psx.is_active = 1
-  ) ELSE 0 END), 0) AS updated_total
-  FROM supplier_import_rows WHERE run_id = ?");
-$summarySt->execute([$supplierId, $runId]);
+  {$updatedExpr}
+  FROM supplier_import_rows WHERE run_id = ?";
+$summarySt = db()->prepare($summarySql);
+if ($supplierSkuColumn !== null) {
+  $summarySt->execute([$supplierId, $runId]);
+} else {
+  $summarySt->execute([$runId]);
+}
 $summary = $summarySt->fetch() ?: ['total' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => 0, 'updated_total' => 0];
 
 $matchedSt = db()->prepare("SELECT
