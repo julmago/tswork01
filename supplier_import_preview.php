@@ -17,20 +17,46 @@ if (!$run) {
   throw new Exception('No existe supplier_import_runs.id=' . $runId);
 }
 
+$cols = db()->query('SHOW COLUMNS FROM supplier_import_rows')->fetchAll(PDO::FETCH_COLUMN, 0);
+$hasStatus = in_array('status', $cols, true);
+$hasChosen = in_array('chosen_by_rule', $cols, true);
+$hasDesc = in_array('description', $cols, true);
+$hasRaw = in_array('raw_price', $cols, true);
+$hasNorm = in_array('normalized_unit_cost', $cols, true);
+$hasPriceCol = in_array('price_column_name', $cols, true);
+$hasDisc = in_array('discount_applied_percent', $cols, true);
+$hasCalc = in_array('cost_calc_detail', $cols, true);
+$hasReason = in_array('reason', $cols, true);
+$hasSupSku = in_array('supplier_sku', $cols, true) || in_array('supplier_code', $cols, true);
+$hasIsValid = in_array('is_valid', $cols, true);
+$hasProductId = in_array('product_id', $cols, true);
+$hasMatchedProductId = in_array('matched_product_id', $cols, true);
+$supplierSkuColumn = in_array('supplier_sku', $cols, true) ? 'supplier_sku' : (in_array('supplier_code', $cols, true) ? 'supplier_code' : null);
+
 $supplierSt = db()->prepare('SELECT name FROM suppliers WHERE id = ? LIMIT 1');
 $supplierSt->execute([(int)$run['supplier_id']]);
 $supplierName = (string)($supplierSt->fetchColumn() ?: '—');
 $run['supplier_name'] = $supplierName;
 
 $supplierId = (int)$run['supplier_id'];
+$chosenExpr = $hasChosen ? ' AND chosen_by_rule = 1' : '';
+$matchExpr = $hasStatus ? "status = 'MATCHED'{$chosenExpr}" : ($hasIsValid ? 'is_valid = 1' : '1=1');
+
+$unmatchedExpr = $hasStatus
+  ? "status = 'UNMATCHED'"
+  : ($hasIsValid ? 'is_valid = 0' : '0=1');
+$duplicatesExpr = $hasStatus ? "status = 'DUPLICATE_SKU'" : '0=1';
+$invalidExpr = $hasStatus
+  ? "status = 'INVALID'"
+  : ($hasIsValid ? 'is_valid = 0' : '0=1');
 
 $summarySt = db()->prepare("SELECT
   COUNT(*) AS total,
-  SUM(CASE WHEN status = 'MATCHED' AND chosen_by_rule = 1 THEN 1 ELSE 0 END) AS matched,
-  SUM(CASE WHEN status = 'UNMATCHED' THEN 1 ELSE 0 END) AS unmatched,
-  SUM(CASE WHEN status = 'DUPLICATE_SKU' THEN 1 ELSE 0 END) AS duplicates,
-  SUM(CASE WHEN status = 'INVALID' THEN 1 ELSE 0 END) AS invalid,
-  COALESCE(SUM(CASE WHEN status = 'MATCHED' AND chosen_by_rule = 1 THEN (
+  SUM(CASE WHEN {$matchExpr} THEN 1 ELSE 0 END) AS matched,
+  SUM(CASE WHEN {$unmatchedExpr} THEN 1 ELSE 0 END) AS unmatched,
+  SUM(CASE WHEN {$duplicatesExpr} THEN 1 ELSE 0 END) AS duplicates,
+  SUM(CASE WHEN {$invalidExpr} THEN 1 ELSE 0 END) AS invalid,
+  COALESCE(SUM(CASE WHEN {$matchExpr} THEN (
     SELECT COUNT(*) FROM product_suppliers psx
     WHERE psx.supplier_id = ?
       AND psx.supplier_sku = supplier_import_rows.supplier_sku
@@ -46,31 +72,23 @@ $matchedSt = db()->prepare("SELECT
   GROUP_CONCAT(DISTINCT p.sku ORDER BY p.sku SEPARATOR ', ') AS product_skus,
   GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ', ') AS product_names
   FROM supplier_import_rows r
-  LEFT JOIN product_suppliers ps ON ps.supplier_id = ? AND ps.supplier_sku = r.supplier_sku AND ps.is_active = 1
+  LEFT JOIN product_suppliers ps ON ps.supplier_id = ?" . ($supplierSkuColumn !== null ? " AND ps.supplier_sku = r.$supplierSkuColumn" : '') . " AND ps.is_active = 1
   LEFT JOIN products p ON p.id = ps.product_id
-  WHERE r.run_id = ? AND r.status = 'MATCHED'
+  WHERE r.run_id = ?" . ($hasStatus ? " AND r.status = 'MATCHED'" : '') . ($hasChosen ? ' AND r.chosen_by_rule = 1' : '') . "
   GROUP BY r.id
-  ORDER BY r.supplier_sku ASC, r.id ASC");
+  ORDER BY " . ($supplierSkuColumn !== null ? "r.$supplierSkuColumn ASC, " : '') . "r.id ASC");
 $matchedSt->execute([$supplierId, $runId]);
 $matchedRows = $matchedSt->fetchAll();
 
-$duplicateSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ? AND status = 'DUPLICATE_SKU' ORDER BY supplier_sku ASC, id ASC");
+$duplicateSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ?" . ($hasStatus ? " AND status = 'DUPLICATE_SKU'" : ' AND 0=1') . " ORDER BY " . ($supplierSkuColumn !== null ? "$supplierSkuColumn ASC, " : '') . "id ASC");
 $duplicateSt->execute([$runId]);
 $duplicateRows = $duplicateSt->fetchAll();
 
-$unmatchedSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ? AND status IN ('UNMATCHED','INVALID') ORDER BY supplier_sku ASC, id ASC");
+$unmatchedSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ?" . ($hasStatus ? " AND status IN ('UNMATCHED','INVALID')" : ($hasIsValid ? ' AND is_valid = 0' : ' AND 0=1')) . " ORDER BY " . ($supplierSkuColumn !== null ? "$supplierSkuColumn ASC, " : '') . "id ASC");
 $unmatchedSt->execute([$runId]);
 $unmatchedRows = $unmatchedSt->fetchAll();
 
-$cols = db()->query('SHOW COLUMNS FROM supplier_import_rows')->fetchAll(PDO::FETCH_COLUMN, 0);
-$hasProductId = in_array('product_id', $cols, true);
-$hasMatchedProductId = in_array('matched_product_id', $cols, true);
-$hasIsValid = in_array('is_valid', $cols, true);
-$hasStatus = in_array('status', $cols, true);
-$hasSupSku = in_array('supplier_sku', $cols, true) || in_array('supplier_code', $cols, true);
-
 $productIdColumn = $hasProductId ? 'product_id' : ($hasMatchedProductId ? 'matched_product_id' : null);
-$supplierSkuColumn = in_array('supplier_sku', $cols, true) ? 'supplier_sku' : (in_array('supplier_code', $cols, true) ? 'supplier_code' : null);
 $statusCondition = '1=1';
 if ($hasStatus) {
   $statusCondition = "r.status = 'MATCHED'";
@@ -201,23 +219,23 @@ $unsyncedRows = $unsyncedSt->fetchAll();
           <tr><td colspan="10">Sin filas.</td></tr>
         <?php else: foreach ($matchedRows as $row): ?>
           <tr>
-            <td><?= e((string)$row['supplier_sku']) ?></td>
+            <td><?= e((string)($row['supplier_sku'] ?? $row['supplier_code'] ?? '—')) ?></td>
             <td><?= e((string)($row['product_skus'] ?? '—')) ?></td>
             <td><?= e((string)($row['product_names'] ?? '—')) ?></td>
             <td>
               <?php $matchCount = (int)($row['matched_products_count'] ?? 0); ?>
               <?php if ($matchCount > 1): ?>
-                <?= e((string)$row['supplier_sku']) ?> -> <?= $matchCount ?> productos actualizados (<?= e((string)($row['product_skus'] ?? '')) ?>)
+                <?= e((string)($row['supplier_sku'] ?? $row['supplier_code'] ?? '—')) ?> -> <?= $matchCount ?> productos actualizados (<?= e((string)($row['product_skus'] ?? '')) ?>)
               <?php else: ?>
                 <?= $matchCount ?> producto actualizado
               <?php endif; ?>
             </td>
-            <td><?= $row['normalized_unit_cost'] !== null ? (int)round((float)$row['normalized_unit_cost'], 0) : '—' ?></td>
-            <td><?= $row['raw_price'] !== null ? (int)round((float)$row['raw_price'], 0) : '—' ?></td>
-            <td><?= e((string)($row['price_column_name'] ?? '')) ?></td>
-            <td><?= $row['discount_applied_percent'] !== null ? e(number_format((float)$row['discount_applied_percent'], 2, '.', '')) . '%' : '—' ?></td>
-            <td><?= e((string)($row['cost_calc_detail'] ?? '')) ?></td>
-            <td><?= e((string)($row['reason'] ?? '')) ?><?= (int)$row['chosen_by_rule'] === 1 ? ' [elegida]' : '' ?></td>
+            <td><?= ($row['normalized_unit_cost'] ?? null) !== null ? (int)round((float)$row['normalized_unit_cost'], 0) : '—' ?></td>
+            <td><?= ($row['raw_price'] ?? null) !== null ? (int)round((float)$row['raw_price'], 0) : '—' ?></td>
+            <td><?= e((string)($row['price_column_name'] ?? '—')) ?></td>
+            <td><?= ($row['discount_applied_percent'] ?? null) !== null ? e(number_format((float)$row['discount_applied_percent'], 2, '.', '')) . '%' : '—' ?></td>
+            <td><?= e((string)($row['cost_calc_detail'] ?? '—')) ?></td>
+            <td><?= e((string)($row['reason'] ?? '—')) ?><?= (int)($row['chosen_by_rule'] ?? 0) === 1 ? ' [elegida]' : '' ?></td>
           </tr>
         <?php endforeach; endif; ?>
         </tbody>
@@ -233,11 +251,11 @@ $unsyncedRows = $unsyncedSt->fetchAll();
           <tr><td colspan="5">Sin duplicados descartados.</td></tr>
         <?php else: foreach ($duplicateRows as $row): ?>
           <tr>
-            <td><?= e((string)$row['supplier_sku']) ?></td>
-            <td><?= e((string)($row['description'] ?? '')) ?></td>
-            <td><?= $row['normalized_unit_cost'] !== null ? (int)round((float)$row['normalized_unit_cost'], 0) : '—' ?></td>
-            <td><?= e((string)$row['status']) ?></td>
-            <td><?= e((string)($row['reason'] ?? '')) ?></td>
+            <td><?= e((string)($row['supplier_sku'] ?? $row['supplier_code'] ?? '—')) ?></td>
+            <td><?= e((string)($row['description'] ?? '—')) ?></td>
+            <td><?= ($row['normalized_unit_cost'] ?? null) !== null ? (int)round((float)$row['normalized_unit_cost'], 0) : '—' ?></td>
+            <td><?= e((string)($row['status'] ?? '—')) ?></td>
+            <td><?= e((string)($row['reason'] ?? '—')) ?></td>
           </tr>
         <?php endforeach; endif; ?>
         </tbody>
@@ -253,14 +271,14 @@ $unsyncedRows = $unsyncedSt->fetchAll();
           <tr><td colspan="8">Sin filas no vinculadas.</td></tr>
         <?php else: foreach ($unmatchedRows as $row): ?>
           <tr>
-            <td><?= e((string)$row['supplier_sku']) ?></td>
-            <td><?= e((string)($row['description'] ?? '')) ?></td>
-            <td><?= $row['raw_price'] !== null ? (int)round((float)$row['raw_price'], 0) : '—' ?></td>
-            <td><?= e((string)($row['price_column_name'] ?? '')) ?></td>
-            <td><?= $row['discount_applied_percent'] !== null ? e(number_format((float)$row['discount_applied_percent'], 2, '.', '')) . '%' : '—' ?></td>
-            <td><?= e((string)($row['cost_calc_detail'] ?? '')) ?></td>
-            <td><?= e((string)$row['status']) ?></td>
-            <td><?= e((string)($row['reason'] ?? '')) ?></td>
+            <td><?= e((string)($row['supplier_sku'] ?? $row['supplier_code'] ?? '—')) ?></td>
+            <td><?= e((string)($row['description'] ?? '—')) ?></td>
+            <td><?= ($row['raw_price'] ?? null) !== null ? (int)round((float)$row['raw_price'], 0) : '—' ?></td>
+            <td><?= e((string)($row['price_column_name'] ?? '—')) ?></td>
+            <td><?= ($row['discount_applied_percent'] ?? null) !== null ? e(number_format((float)$row['discount_applied_percent'], 2, '.', '')) . '%' : '—' ?></td>
+            <td><?= e((string)($row['cost_calc_detail'] ?? '—')) ?></td>
+            <td><?= e((string)($row['status'] ?? '—')) ?></td>
+            <td><?= e((string)($row['reason'] ?? '—')) ?></td>
           </tr>
         <?php endforeach; endif; ?>
         </tbody>
