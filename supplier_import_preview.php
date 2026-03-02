@@ -15,6 +15,7 @@ $run = $stRun->fetch();
 if (!$run) {
   abort(404, 'Importación no encontrada.');
 }
+$supplierId = (int)$run['supplier_id'];
 
 $summarySt = db()->prepare("SELECT
   COUNT(*) AS total,
@@ -29,7 +30,7 @@ $summarySt = db()->prepare("SELECT
       AND psx.is_active = 1
   ) ELSE 0 END), 0) AS updated_total
   FROM supplier_import_rows WHERE run_id = ?");
-$summarySt->execute([(int)$run['supplier_id'], $runId]);
+$summarySt->execute([$supplierId, $runId]);
 $summary = $summarySt->fetch() ?: ['total' => 0, 'matched' => 0, 'unmatched' => 0, 'duplicates' => 0, 'invalid' => 0, 'updated_total' => 0];
 
 $matchedSt = db()->prepare("SELECT
@@ -43,7 +44,7 @@ $matchedSt = db()->prepare("SELECT
   WHERE r.run_id = ? AND r.status = 'MATCHED'
   GROUP BY r.id
   ORDER BY r.supplier_sku ASC, r.id ASC");
-$matchedSt->execute([(int)$run['supplier_id'], $runId]);
+$matchedSt->execute([$supplierId, $runId]);
 $matchedRows = $matchedSt->fetchAll();
 
 $duplicateSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ? AND status = 'DUPLICATE_SKU' ORDER BY supplier_sku ASC, id ASC");
@@ -53,6 +54,29 @@ $duplicateRows = $duplicateSt->fetchAll();
 $unmatchedSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = ? AND status IN ('UNMATCHED','INVALID') ORDER BY supplier_sku ASC, id ASC");
 $unmatchedSt->execute([$runId]);
 $unmatchedRows = $unmatchedSt->fetchAll();
+
+$unsyncedSt = db()->prepare("SELECT
+  p.id,
+  p.sku,
+  p.name,
+  ps.supplier_sku,
+  ps.cost_received,
+  ps.is_active
+  FROM product_suppliers ps
+  INNER JOIN products p ON p.id = ps.product_id
+  WHERE ps.supplier_id = ?
+    AND ps.product_id NOT IN (
+      SELECT r.matched_product_id
+      FROM supplier_import_rows r
+      WHERE r.run_id = ?
+        AND r.matched_product_id IS NOT NULL
+        AND r.status = 'MATCHED'
+        AND r.chosen_by_rule = 1
+    )
+  ORDER BY p.name ASC
+  LIMIT 500");
+$unsyncedSt->execute([$supplierId, $runId]);
+$unsyncedRows = $unsyncedSt->fetchAll();
 ?>
 <!doctype html>
 <html>
@@ -164,6 +188,28 @@ $unmatchedRows = $unmatchedSt->fetchAll();
             <td><?= e((string)($row['cost_calc_detail'] ?? '')) ?></td>
             <td><?= e((string)$row['status']) ?></td>
             <td><?= e((string)($row['reason'] ?? '')) ?></td>
+          </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">No sincronizados (ya existentes en TSWork)</h3></div>
+      <p class="muted">Productos vinculados a este proveedor que no aparecieron en el archivo de esta corrida.</p>
+      <div class="table-wrapper"><table class="table">
+        <thead><tr><th>SKU (TSWork)</th><th>Nombre</th><th>SKU Proveedor</th><th>Costo</th><th>Activo</th><th>Acción</th></tr></thead>
+        <tbody>
+        <?php if (!$unsyncedRows): ?>
+          <tr><td colspan="6">No hay productos pendientes. ✅</td></tr>
+        <?php else: foreach ($unsyncedRows as $row): ?>
+          <tr>
+            <td><?= e((string)$row['sku']) ?></td>
+            <td><?= e((string)$row['name']) ?></td>
+            <td><?= e((string)($row['supplier_sku'] ?? '—')) ?></td>
+            <td><?= $row['cost_received'] !== null ? e(number_format((float)$row['cost_received'], 2, '.', '')) : '—' ?></td>
+            <td><?= (int)$row['is_active'] === 1 ? 'Sí' : 'No' ?></td>
+            <td><a href="product_view.php?id=<?= (int)$row['id'] ?>">Ver</a></td>
           </tr>
         <?php endforeach; endif; ?>
         </tbody>
