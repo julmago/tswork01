@@ -106,13 +106,23 @@ if ($hasStatus) {
   $statusCondition = 'r.is_valid = 1';
 }
 
+$psCols = db()->query('SHOW COLUMNS FROM product_suppliers')->fetchAll(PDO::FETCH_COLUMN, 0);
+$costCol = null;
+foreach (['cost_received', 'supplier_cost', 'cost_provider', 'cost_proveedor', 'cost'] as $candidateCol) {
+  if (in_array($candidateCol, $psCols, true)) {
+    $costCol = $candidateCol;
+    break;
+  }
+}
+$costSelect = $costCol !== null ? "ps.$costCol AS cost," : '';
+
 if ($productIdColumn !== null) {
   $unsyncedSql = "SELECT
   p.id,
   p.sku,
   p.name,
   ps.supplier_sku,
-  ps.cost_received,
+  $costSelect
   ps.is_active
   FROM product_suppliers ps
   INNER JOIN products p ON p.id = ps.product_id
@@ -132,7 +142,7 @@ if ($productIdColumn !== null) {
   p.sku,
   p.name,
   ps.supplier_sku,
-  ps.cost_received,
+  $costSelect
   ps.is_active
   FROM product_suppliers ps
   INNER JOIN products p ON p.id = ps.product_id
@@ -152,7 +162,7 @@ if ($productIdColumn !== null) {
   p.sku,
   p.name,
   ps.supplier_sku,
-  ps.cost_received,
+  $costSelect
   ps.is_active
   FROM product_suppliers ps
   INNER JOIN products p ON p.id = ps.product_id
@@ -308,7 +318,7 @@ $unsyncedRows = $unsyncedSt->fetchAll();
             <td><?= e((string)$row['sku']) ?></td>
             <td><?= e((string)$row['name']) ?></td>
             <td><?= e((string)($row['supplier_sku'] ?? '—')) ?></td>
-            <td><?= $row['cost_received'] !== null ? e(number_format((float)$row['cost_received'], 2, '.', '')) : '—' ?></td>
+            <td><?= e(isset($row['cost']) ? (string)$row['cost'] : '—') ?></td>
             <td><?= (int)$row['is_active'] === 1 ? 'Sí' : 'No' ?></td>
             <td><a href="product_view.php?id=<?= (int)$row['id'] ?>">Ver</a></td>
           </tr>
