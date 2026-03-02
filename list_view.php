@@ -190,10 +190,13 @@ $list = $st->fetch();
 $items = db()->prepare("
   SELECT p.id AS product_id, p.sku, p.name,
     (
-      SELECT MIN(ps.supplier_sku)
+      SELECT ps.supplier_sku
       FROM product_suppliers ps
       WHERE ps.product_id = p.id
-    ) AS supplier_sku,
+        AND ps.is_active = 1
+      ORDER BY ps.id ASC
+      LIMIT 1
+    ) AS supplier_sku_active,
     i.qty, i.synced_qty, i.updated_at
   FROM stock_list_items i
   JOIN products p ON p.id = i.product_id
@@ -523,7 +526,7 @@ $show_subtitle = $list_name !== '' && $list_name !== $page_title;
                   <td>
                     <a class="row-link" href="product_view.php?id=<?= $product_id ?>"><?= e($it['sku']) ?></a>
                   </td>
-                  <td><?= e($it['supplier_sku'] ?? '—') ?></td>
+                  <td><?= e($it['supplier_sku_active'] ?? '—') ?></td>
                   <td>
                     <a class="row-link" href="product_view.php?id=<?= $product_id ?>"><?= e($it['name']) ?></a>
                   </td>
