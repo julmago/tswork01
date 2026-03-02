@@ -136,6 +136,16 @@ if ($productIdColumn !== null) {
 $unsyncedSt = db()->prepare($unsyncedSql);
 $unsyncedSt->execute([$supplierId, $runId]);
 $unsyncedRows = $unsyncedSt->fetchAll();
+} catch (Throwable $e) {
+  error_log("supplier_import_preview ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+
+  if (defined('DEBUG') && DEBUG) {
+    die('<pre>' . $e->getMessage() . "\n\n" . $e->getTraceAsString() . '</pre>');
+  }
+
+  http_response_code(500);
+  die('Ocurrió un error interno.');
+}
 ?>
 <!doctype html>
 <html>
@@ -257,7 +267,7 @@ $unsyncedRows = $unsyncedSt->fetchAll();
       <div class="card-header"><h3 class="card-title">No sincronizados (ya existentes en TSWork)</h3></div>
       <p class="muted">Productos vinculados a este proveedor que no aparecieron en el archivo de esta corrida.</p>
       <div class="table-wrapper"><table class="table">
-        <thead><tr><th>SKU (TSWork)</th><th>Nombre</th><th>SKU Proveedor</th><th>Costo</th><th>Activo</th><th>Acción</th></tr></thead>
+        <thead><tr><th>SKU</th><th>Nombre</th><th>SKU Proveedor</th><th>Costo</th><th>Activo</th><th>Ver</th></tr></thead>
         <tbody>
         <?php if (!$unsyncedRows): ?>
           <tr><td colspan="6">No hay productos pendientes. ✅</td></tr>
@@ -278,15 +288,3 @@ $unsyncedRows = $unsyncedSt->fetchAll();
 </main>
 </body>
 </html>
-<?php
-} catch (Throwable $e) {
-  error_log("supplier_import_preview ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
-
-  if (defined('DEBUG') && DEBUG) {
-    die('<pre>supplier_import_preview ERROR:' . "\n" . $e->getMessage() . "\n\n" . $e->getTraceAsString() . '</pre>');
-  }
-
-  http_response_code(500);
-  echo 'Ocurrió un error interno.';
-  exit;
-}
