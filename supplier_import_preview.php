@@ -134,7 +134,11 @@ if ($productIdColumn !== null) {
 }
 
 $unsyncedSt = db()->prepare($unsyncedSql);
-$unsyncedSt->execute([$supplierId, $runId]);
+$unsyncedParams = [$supplierId];
+if (strpos($unsyncedSql, 'r.run_id = ?') !== false) {
+  $unsyncedParams[] = $runId;
+}
+$unsyncedSt->execute($unsyncedParams);
 $unsyncedRows = $unsyncedSt->fetchAll();
 } catch (Throwable $e) {
   error_log("supplier_import_preview ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
