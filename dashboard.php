@@ -35,6 +35,10 @@ $lists = $st->fetchAll();
   <meta charset="utf-8">
   <title>TS WORK</title>
   <?= theme_css_links() ?>
+  <style>
+    .row-link { color: inherit; text-decoration: none; }
+    .row-link:hover { text-decoration: underline; }
+  </style>
 </head>
 <body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
@@ -115,10 +119,18 @@ $lists = $st->fetchAll();
           </thead>
           <tbody>
             <?php foreach ($lists as $l): ?>
-              <tr style="cursor:pointer;" onclick="window.location='list_view.php?id=<?= (int)$l['id'] ?>'">
-                <td><?= (int)$l['id'] ?></td>
+              <tr>
+                <td>
+                  <a class="row-link" href="list_view.php?id=<?= (int)$l['id'] ?>">
+                    <?= (int)$l['id'] ?>
+                  </a>
+                </td>
                 <td><?= e($l['created_at']) ?></td>
-                <td><?= e($l['name']) ?></td>
+                <td>
+                  <a class="row-link" href="list_view.php?id=<?= (int)$l['id'] ?>">
+                    <?= e($l['name']) ?>
+                  </a>
+                </td>
                 <td><?= e($l['first_name'] . ' ' . $l['last_name']) ?></td>
                 <td>
                   <?php if ($l['sync_target'] === 'prestashop'): ?>
