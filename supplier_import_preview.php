@@ -98,14 +98,6 @@ $unmatchedSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = 
 $unmatchedSt->execute([$runId]);
 $unmatchedRows = $unmatchedSt->fetchAll();
 
-$productIdColumn = $hasProductId ? 'product_id' : ($hasMatchedProductId ? 'matched_product_id' : null);
-$statusCondition = '1=1';
-if ($hasStatus) {
-  $statusCondition = "r.status = 'MATCHED'";
-} elseif ($hasIsValid) {
-  $statusCondition = 'r.is_valid = 1';
-}
-
 $psCols = db()->query('SHOW COLUMNS FROM product_suppliers')->fetchAll(PDO::FETCH_COLUMN, 0);
 $costCol = null;
 foreach (['cost_received', 'supplier_cost', 'cost_provider', 'cost_proveedor', 'cost'] as $candidateCol) {
@@ -115,9 +107,7 @@ foreach (['cost_received', 'supplier_cost', 'cost_provider', 'cost_proveedor', '
   }
 }
 $costSelect = $costCol !== null ? "ps.$costCol AS cost," : '';
-
-if ($productIdColumn !== null) {
-  $unsyncedSql = "SELECT
+$unsyncedSql = "SELECT
   p.id,
   p.sku,
   p.name,
@@ -127,56 +117,18 @@ if ($productIdColumn !== null) {
   FROM product_suppliers ps
   INNER JOIN products p ON p.id = ps.product_id
   WHERE ps.supplier_id = ?
-    AND ps.product_id NOT IN (
-      SELECT r.$productIdColumn
+    AND COALESCE(ps.supplier_sku, '') <> ''
+    AND NOT EXISTS (
+      SELECT 1
       FROM supplier_import_rows r
       WHERE r.run_id = ?
-        AND r.$productIdColumn IS NOT NULL
-        AND $statusCondition
+        AND r.supplier_sku = ps.supplier_sku
     )
   ORDER BY p.name ASC
   LIMIT 500";
-} elseif ($hasSupSku && $supplierSkuColumn !== null) {
-  $unsyncedSql = "SELECT
-  p.id,
-  p.sku,
-  p.name,
-  ps.supplier_sku,
-  $costSelect
-  ps.is_active
-  FROM product_suppliers ps
-  INNER JOIN products p ON p.id = ps.product_id
-  WHERE ps.supplier_id = ?
-    AND ps.supplier_sku NOT IN (
-      SELECT r.$supplierSkuColumn
-      FROM supplier_import_rows r
-      WHERE r.run_id = ?
-        AND r.$supplierSkuColumn IS NOT NULL
-        AND $statusCondition
-    )
-  ORDER BY p.name ASC
-  LIMIT 500";
-} else {
-  $unsyncedSql = "SELECT
-  p.id,
-  p.sku,
-  p.name,
-  ps.supplier_sku,
-  $costSelect
-  ps.is_active
-  FROM product_suppliers ps
-  INNER JOIN products p ON p.id = ps.product_id
-  WHERE ps.supplier_id = ?
-  ORDER BY p.name ASC
-  LIMIT 500";
-}
 
 $unsyncedSt = db()->prepare($unsyncedSql);
-$unsyncedParams = [$supplierId];
-if (strpos($unsyncedSql, 'r.run_id = ?') !== false) {
-  $unsyncedParams[] = $runId;
-}
-$unsyncedSt->execute($unsyncedParams);
+$unsyncedSt->execute([$supplierId, $runId]);
 $unsyncedRows = $unsyncedSt->fetchAll();
 } catch (Throwable $e) {
   error_log("supplier_import_preview ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
@@ -306,13 +258,13 @@ $unsyncedRows = $unsyncedSt->fetchAll();
     </div>
 
     <div class="card">
-      <div class="card-header"><h3 class="card-title">No sincronizados (ya existentes en TSWork)</h3></div>
-      <p class="muted">Productos vinculados a este proveedor que no aparecieron en el archivo de esta corrida.</p>
+      <div class="card-header"><h3 class="card-title">Faltantes en el archivo (existen en TSWork, pero no vinieron en este CSV)</h3></div>
+      <p class="muted">Productos vinculados a este proveedor en TSWork cuyo SKU proveedor no aparece en el archivo de esta corrida.</p>
       <div class="table-wrapper"><table class="table">
         <thead><tr><th>SKU</th><th>Nombre</th><th>SKU Proveedor</th><th>Costo</th><th>Activo</th><th>Ver</th></tr></thead>
         <tbody>
         <?php if (!$unsyncedRows): ?>
-          <tr><td colspan="6">No hay productos pendientes. ✅</td></tr>
+          <tr><td colspan="6">No hay faltantes. ✅ (Todo lo vinculado en TSWork apareció en el archivo)</td></tr>
         <?php else: foreach ($unsyncedRows as $row): ?>
           <tr>
             <td><?= e((string)$row['sku']) ?></td>
