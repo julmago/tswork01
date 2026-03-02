@@ -4,17 +4,24 @@ require_once __DIR__ . '/db.php';
 require_login();
 ensure_product_suppliers_schema();
 
-$runId = (int)get('run_id', '0');
+try {
+$runId = (int)($_GET['run_id'] ?? 0);
 if ($runId <= 0) {
-  abort(400, 'Importación inválida.');
+  throw new Exception('run_id inválido');
 }
 
-$stRun = db()->prepare('SELECT r.*, s.name AS supplier_name FROM supplier_import_runs r INNER JOIN suppliers s ON s.id = r.supplier_id WHERE r.id = ? LIMIT 1');
-$stRun->execute([$runId]);
-$run = $stRun->fetch();
+$runSt = db()->prepare('SELECT * FROM supplier_import_runs WHERE id = ?');
+$runSt->execute([$runId]);
+$run = $runSt->fetch();
 if (!$run) {
-  abort(404, 'Importación no encontrada.');
+  throw new Exception('No existe supplier_import_runs.id=' . $runId);
 }
+
+$supplierSt = db()->prepare('SELECT name FROM suppliers WHERE id = ? LIMIT 1');
+$supplierSt->execute([(int)$run['supplier_id']]);
+$supplierName = (string)($supplierSt->fetchColumn() ?: '—');
+$run['supplier_name'] = $supplierName;
+
 $supplierId = (int)$run['supplier_id'];
 
 $summarySt = db()->prepare("SELECT
@@ -55,7 +62,24 @@ $unmatchedSt = db()->prepare("SELECT * FROM supplier_import_rows WHERE run_id = 
 $unmatchedSt->execute([$runId]);
 $unmatchedRows = $unmatchedSt->fetchAll();
 
-$unsyncedSt = db()->prepare("SELECT
+$cols = db()->query('SHOW COLUMNS FROM supplier_import_rows')->fetchAll(PDO::FETCH_COLUMN, 0);
+$hasProductId = in_array('product_id', $cols, true);
+$hasMatchedProductId = in_array('matched_product_id', $cols, true);
+$hasIsValid = in_array('is_valid', $cols, true);
+$hasStatus = in_array('status', $cols, true);
+$hasSupSku = in_array('supplier_sku', $cols, true) || in_array('supplier_code', $cols, true);
+
+$productIdColumn = $hasProductId ? 'product_id' : ($hasMatchedProductId ? 'matched_product_id' : null);
+$supplierSkuColumn = in_array('supplier_sku', $cols, true) ? 'supplier_sku' : (in_array('supplier_code', $cols, true) ? 'supplier_code' : null);
+$statusCondition = '1=1';
+if ($hasStatus) {
+  $statusCondition = "r.status = 'MATCHED'";
+} elseif ($hasIsValid) {
+  $statusCondition = 'r.is_valid = 1';
+}
+
+if ($productIdColumn !== null) {
+  $unsyncedSql = "SELECT
   p.id,
   p.sku,
   p.name,
@@ -66,15 +90,50 @@ $unsyncedSt = db()->prepare("SELECT
   INNER JOIN products p ON p.id = ps.product_id
   WHERE ps.supplier_id = ?
     AND ps.product_id NOT IN (
-      SELECT r.matched_product_id
+      SELECT r.$productIdColumn
       FROM supplier_import_rows r
       WHERE r.run_id = ?
-        AND r.matched_product_id IS NOT NULL
-        AND r.status = 'MATCHED'
-        AND r.chosen_by_rule = 1
+        AND r.$productIdColumn IS NOT NULL
+        AND $statusCondition
     )
   ORDER BY p.name ASC
-  LIMIT 500");
+  LIMIT 500";
+} elseif ($hasSupSku && $supplierSkuColumn !== null) {
+  $unsyncedSql = "SELECT
+  p.id,
+  p.sku,
+  p.name,
+  ps.supplier_sku,
+  ps.cost_received,
+  ps.is_active
+  FROM product_suppliers ps
+  INNER JOIN products p ON p.id = ps.product_id
+  WHERE ps.supplier_id = ?
+    AND ps.supplier_sku NOT IN (
+      SELECT r.$supplierSkuColumn
+      FROM supplier_import_rows r
+      WHERE r.run_id = ?
+        AND r.$supplierSkuColumn IS NOT NULL
+        AND $statusCondition
+    )
+  ORDER BY p.name ASC
+  LIMIT 500";
+} else {
+  $unsyncedSql = "SELECT
+  p.id,
+  p.sku,
+  p.name,
+  ps.supplier_sku,
+  ps.cost_received,
+  ps.is_active
+  FROM product_suppliers ps
+  INNER JOIN products p ON p.id = ps.product_id
+  WHERE ps.supplier_id = ?
+  ORDER BY p.name ASC
+  LIMIT 500";
+}
+
+$unsyncedSt = db()->prepare($unsyncedSql);
 $unsyncedSt->execute([$supplierId, $runId]);
 $unsyncedRows = $unsyncedSt->fetchAll();
 ?>
@@ -219,3 +278,15 @@ $unsyncedRows = $unsyncedSt->fetchAll();
 </main>
 </body>
 </html>
+<?php
+} catch (Throwable $e) {
+  error_log("supplier_import_preview ERROR: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+
+  if (defined('DEBUG') && DEBUG) {
+    die('<pre>supplier_import_preview ERROR:' . "\n" . $e->getMessage() . "\n\n" . $e->getTraceAsString() . '</pre>');
+  }
+
+  http_response_code(500);
+  echo 'Ocurrió un error interno.';
+  exit;
+}
