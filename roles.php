@@ -50,6 +50,7 @@ $sections = [
   ],
   'Proveedores' => [
     'suppliers_attach_csv' => 'Agregar proveedor (CSV)',
+    'suppliers_ps_bulk' => 'PrestaShop masivo por proveedor (CSV)',
   ],
   'Caja' => [
     'cash.view_entries_detail' => 'Ver detalle de entradas',

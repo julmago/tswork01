@@ -178,6 +178,10 @@ function require_permission(bool $allowed, string $message = 'Sin permisos'): vo
   }
 }
 
+function abort403(string $message = 'Sin permisos'): void {
+  abort(403, $message);
+}
+
 function current_user(): array {
   if (empty($_SESSION['logged_in']) || empty($_SESSION['user'])) {
     return [];
@@ -365,6 +369,12 @@ function permission_default_definitions(): array {
       'lectura' => false,
     ],
     'suppliers_attach_csv' => [
+      'superadmin' => true,
+      'admin' => true,
+      'vendedor' => false,
+      'lectura' => false,
+    ],
+    'suppliers_ps_bulk' => [
       'superadmin' => true,
       'admin' => true,
       'vendedor' => false,
@@ -656,6 +666,10 @@ function can_import_csv(): bool {
 
 function can_suppliers_attach_csv(): bool {
   return hasPerm('suppliers_attach_csv');
+}
+
+function can_suppliers_ps_bulk(): bool {
+  return hasPerm('suppliers_ps_bulk');
 }
 
 function can_sync_prestashop(): bool {
