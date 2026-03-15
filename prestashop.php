@@ -392,3 +392,59 @@ function ps_create_stock_available_with_credentials(int $id_product, int $id_pro
   }
   return $id;
 }
+
+function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string $apiKey): SimpleXMLElement {
+  $r = ps_request_with_credentials('GET', '/api/products/' . $idProduct, $baseUrl, $apiKey);
+  if ($r['code'] < 200 || $r['code'] >= 300) {
+    throw new RuntimeException("No se pudo leer product #{$idProduct} (HTTP {$r['code']}).");
+  }
+  return ps_xml_load($r['body']);
+}
+
+function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): void {
+  $sx = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+  if (!isset($sx->product)) {
+    throw new RuntimeException('Respuesta inválida al leer producto de PrestaShop.');
+  }
+
+  $sx->product->active = $active > 0 ? '1' : '0';
+  $xml = $sx->asXML();
+  if ($xml === false) {
+    throw new RuntimeException('No se pudo generar XML para actualizar product.active.');
+  }
+
+  $r = ps_request_with_credentials('PUT', '/api/products/' . $idProduct, $baseUrl, $apiKey, $xml);
+  if (!in_array((int)$r['code'], [200, 201], true)) {
+    throw new RuntimeException("Falló actualización de product.active para #{$idProduct} (HTTP {$r['code']}).");
+  }
+}
+
+function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): void {
+  $idStock = ps_find_stock_available_id_with_credentials($idProduct, 0, $baseUrl, $apiKey);
+  if (!$idStock) {
+    $idStock = ps_create_stock_available_with_credentials($idProduct, 0, 0, $baseUrl, $apiKey);
+  }
+
+  $r = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
+  if ($r['code'] < 200 || $r['code'] >= 300) {
+    throw new RuntimeException("No se pudo leer stock_available #{$idStock} (HTTP {$r['code']}).");
+  }
+
+  $sx = ps_xml_load($r['body']);
+  if (!isset($sx->stock_available)) {
+    throw new RuntimeException('Respuesta inválida al leer stock_available de PrestaShop.');
+  }
+
+  $normalized = in_array($outOfStock, [0, 1, 2], true) ? $outOfStock : 2;
+  $sx->stock_available->out_of_stock = (string)$normalized;
+
+  $xml = $sx->asXML();
+  if ($xml === false) {
+    throw new RuntimeException('No se pudo generar XML para actualizar out_of_stock.');
+  }
+
+  $put = ps_request_with_credentials('PUT', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, $xml);
+  if (!in_array((int)$put['code'], [200, 201], true)) {
+    throw new RuntimeException("Falló actualización out_of_stock para stock_available #{$idStock} (HTTP {$put['code']}).");
+  }
+}

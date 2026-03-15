@@ -27,6 +27,18 @@ $dedupeModeLabels = [
 ];
 
 $error = '';
+$psBulkError = '';
+$psBulkSites = [];
+if (can_suppliers_ps_bulk()) {
+  $psSitesSt = $pdo->query("SELECT s.id, s.name, sc.ps_base_url, sc.ps_api_key
+    FROM sites s
+    INNER JOIN site_connections sc ON sc.site_id = s.id
+    WHERE s.is_active = 1
+      AND s.conn_enabled = 1
+      AND LOWER(s.conn_type) = 'prestashop'
+    ORDER BY s.name ASC");
+  $psBulkSites = $psSitesSt->fetchAll();
+}
 $form = [
   'name' => (string)$supplier['name'],
   'base_margin_percent' => number_format((float)$supplier['base_margin_percent'], 2, '.', ''),
@@ -35,6 +47,57 @@ $form = [
   'import_default_cost_type' => (string)$supplier['import_default_cost_type'],
   'import_default_units_per_pack' => $supplier['import_default_units_per_pack'] !== null ? (string)$supplier['import_default_units_per_pack'] : '',
 ];
+
+
+
+if (is_post() && post('action') === 'ps_bulk_step1') {
+  if (!can_suppliers_ps_bulk()) {
+    abort403();
+  }
+
+  $siteId = (int)post('site_id', '0');
+  $selectedSite = null;
+  foreach ($psBulkSites as $siteRow) {
+    if ((int)$siteRow['id'] === $siteId) {
+      $selectedSite = $siteRow;
+      break;
+    }
+  }
+
+  if ($selectedSite === null) {
+    $psBulkError = 'Seleccioná un sitio PrestaShop válido.';
+  } elseif (!isset($_FILES['csv_file']) || !is_array($_FILES['csv_file'])) {
+    $psBulkError = 'Subí un archivo CSV.';
+  } else {
+    $file = $_FILES['csv_file'];
+    $tmpName = (string)($file['tmp_name'] ?? '');
+    $origName = (string)($file['name'] ?? '');
+    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+    $uploadErr = (int)($file['error'] ?? UPLOAD_ERR_OK);
+
+    if ($uploadErr !== UPLOAD_ERR_OK || $tmpName === '' || !is_uploaded_file($tmpName)) {
+      $psBulkError = 'No se pudo procesar el archivo CSV.';
+    } elseif ($ext !== 'csv') {
+      $psBulkError = 'El archivo debe ser .csv';
+    } else {
+      $tmpDir = __DIR__ . '/uploads/tmp';
+      if (!is_dir($tmpDir) && !mkdir($tmpDir, 0775, true) && !is_dir($tmpDir)) {
+        $psBulkError = 'No se pudo crear el directorio temporal.';
+      } else {
+        $safeToken = bin2hex(random_bytes(12));
+        $targetPath = $tmpDir . '/ps_bulk_' . $id . '_' . $safeToken . '.csv';
+        if (!move_uploaded_file($tmpName, $targetPath)) {
+          $psBulkError = 'No se pudo guardar el CSV temporal.';
+        } else {
+          $_SESSION['ps_bulk_supplier_id'] = $id;
+          $_SESSION['ps_bulk_site_id'] = $siteId;
+          $_SESSION['ps_bulk_csv_path'] = $targetPath;
+          redirect('suppliers_ps_bulk.php?step=2');
+        }
+      }
+    }
+  }
+}
 
 if (is_post() && post('action') === 'update_supplier') {
   $form['name'] = trim(post('name'));
@@ -173,6 +236,36 @@ if (is_post() && post('action') === 'update_supplier') {
         </div>
       </form>
     </div>
+
+    <?php if (can_suppliers_ps_bulk()): ?>
+      <div class="card" style="margin-top:var(--space-4)">
+        <form method="post" enctype="multipart/form-data" class="stack">
+          <input type="hidden" name="action" value="ps_bulk_step1">
+          <div class="page-header">
+            <div><h3 class="page-title" style="margin:0">PrestaShop (acciones masivas)</h3></div>
+          </div>
+          <?php if ($psBulkError !== ''): ?><div class="alert alert-danger"><?= e($psBulkError) ?></div><?php endif; ?>
+          <div class="supplier-form-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+            <label class="form-field">
+              <span class="form-label">Sitio PrestaShop</span>
+              <select class="form-control" name="site_id" required>
+                <option value="">Seleccionar...</option>
+                <?php foreach ($psBulkSites as $site): ?>
+                  <option value="<?= (int)$site['id'] ?>"><?= e($site['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="form-field">
+              <span class="form-label">CSV de SKUs proveedor</span>
+              <input class="form-control" type="file" name="csv_file" accept=".csv,text/csv" required>
+            </label>
+          </div>
+          <div class="inline-actions">
+            <button class="btn" type="submit">Siguiente</button>
+          </div>
+        </form>
+      </div>
+    <?php endif; ?>
   </div>
 </main>
 <script>
