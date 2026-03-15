@@ -3,6 +3,17 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/settings.php';
 
+final class PsRequestException extends RuntimeException {
+  /** @var array<string,string|int> */
+  public array $details;
+
+  /** @param array<string,string|int> $details */
+  public function __construct(string $message, array $details = [], int $code = 0, ?Throwable $previous = null) {
+    parent::__construct($message, $code, $previous);
+    $this->details = $details;
+  }
+}
+
 function ps_base_url(): string {
   $url = trim(setting_get('prestashop_url', ''));
   // Normalizar: sin slash final
@@ -137,6 +148,16 @@ function ps_request_with_credentials(string $method, string $path, string $base,
     'url' => $url,
     'headers' => $responseHeaders,
   ];
+}
+
+function ps_truncate_text(string $text, int $max = 1500): string {
+  if ($max < 1) {
+    return '';
+  }
+  if (strlen($text) <= $max) {
+    return $text;
+  }
+  return substr($text, 0, $max) . '… [truncado]';
 }
 
 function ps_xml_load(string $xml): SimpleXMLElement {
@@ -401,22 +422,75 @@ function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string
   return ps_xml_load($r['body']);
 }
 
-function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): void {
-  $sx = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): array {
+  $getPath = '/api/products/' . $idProduct;
+  $getResponse = ps_request_with_credentials('GET', $getPath, $baseUrl, $apiKey, null, ['Accept: application/xml']);
+  if ($getResponse['code'] < 200 || $getResponse['code'] >= 300) {
+    throw new PsRequestException(
+      "No se pudo leer product #{$idProduct} (HTTP {$getResponse['code']}).",
+      [
+        'url' => (string)($getResponse['url'] ?? ''),
+        'method' => 'GET',
+        'status_code' => (int)$getResponse['code'],
+        'request_payload_xml' => '',
+        'response_body_xml' => ps_truncate_text((string)($getResponse['body'] ?? '')),
+      ]
+    );
+  }
+
+  $sx = ps_xml_load((string)$getResponse['body']);
   if (!isset($sx->product)) {
     throw new RuntimeException('Respuesta inválida al leer producto de PrestaShop.');
   }
 
+  if (!isset($sx->product->id) || trim((string)$sx->product->id) === '') {
+    $sx->product->addChild('id', (string)$idProduct);
+  } else {
+    $sx->product->id = (string)$idProduct;
+  }
   $sx->product->active = $active > 0 ? '1' : '0';
   $xml = $sx->asXML();
   if ($xml === false) {
     throw new RuntimeException('No se pudo generar XML para actualizar product.active.');
   }
 
-  $r = ps_request_with_credentials('PUT', '/api/products/' . $idProduct, $baseUrl, $apiKey, $xml);
-  if (!in_array((int)$r['code'], [200, 201], true)) {
-    throw new RuntimeException("Falló actualización de product.active para #{$idProduct} (HTTP {$r['code']}).");
+  $putResponse = ps_request_with_credentials(
+    'PUT',
+    '/api/products/' . $idProduct,
+    $baseUrl,
+    $apiKey,
+    $xml,
+    [
+      'Content-Type: application/xml',
+      'Accept: application/xml',
+    ]
+  );
+
+  $details = [
+    'url' => (string)($putResponse['url'] ?? ''),
+    'method' => 'PUT',
+    'status_code' => (int)$putResponse['code'],
+    'request_payload_xml' => ps_truncate_text($xml),
+    'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
+  ];
+
+  error_log('[PrestaShop] product.active update debug => URL: ' . $details['url']);
+  error_log('[PrestaShop] product.active update debug => Method: PUT');
+  error_log('[PrestaShop] product.active update debug => Status: ' . (int)$details['status_code']);
+  error_log('[PrestaShop] product.active update debug => Payload XML: ' . (string)$details['request_payload_xml']);
+  error_log('[PrestaShop] product.active update debug => Response XML: ' . (string)$details['response_body_xml']);
+
+  if (!in_array((int)$putResponse['code'], [200, 201], true)) {
+    $body = (string)($putResponse['body'] ?? '');
+    if (in_array((int)$putResponse['code'], [401, 403], true)
+      || stripos($body, 'permission') !== false
+      || stripos($body, 'forbidden') !== false) {
+      throw new PsRequestException('Permisos insuficientes: habilitar PUT products en PrestaShop Webservice.', $details);
+    }
+    throw new PsRequestException("Falló actualización de product.active para #{$idProduct} (HTTP {$putResponse['code']}).", $details);
   }
+
+  return $details;
 }
 
 function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): void {

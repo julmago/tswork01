@@ -185,7 +185,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
 
       try {
-        ps_update_product_active_with_credentials($remoteProductId, $activeValue, $psBaseUrl, $psApiKey);
+        $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $activeValue, $psBaseUrl, $psApiKey);
         ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $outOfStockValue, $psBaseUrl, $psApiKey);
 
         $results[] = [
@@ -196,8 +196,17 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'out_of_stock' => $outOfStockValue,
           'status' => 'OK',
           'error' => '',
+          'request_url' => (string)($activeUpdateDebug['url'] ?? ''),
+          'request_method' => (string)($activeUpdateDebug['method'] ?? 'PUT'),
+          'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
+          'request_payload_xml' => (string)($activeUpdateDebug['request_payload_xml'] ?? ''),
+          'response_body_xml' => (string)($activeUpdateDebug['response_body_xml'] ?? ''),
         ];
       } catch (Throwable $t) {
+        $debug = [];
+        if ($t instanceof PsRequestException) {
+          $debug = $t->details;
+        }
         $results[] = [
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
@@ -206,6 +215,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'out_of_stock' => $outOfStockValue,
           'status' => 'ERROR',
           'error' => $t->getMessage(),
+          'request_url' => (string)($debug['url'] ?? ''),
+          'request_method' => (string)($debug['method'] ?? 'PUT'),
+          'status_code' => (string)($debug['status_code'] ?? ''),
+          'request_payload_xml' => (string)($debug['request_payload_xml'] ?? ''),
+          'response_body_xml' => (string)($debug['response_body_xml'] ?? ''),
         ];
       }
     }
@@ -322,6 +336,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>out_of_stock set</th>
                 <th>Estado</th>
                 <th>Error</th>
+                <th>Request URL</th>
+                <th>Método</th>
+                <th>HTTP</th>
+                <th>Payload XML (recortado)</th>
+                <th>Response XML (recortado)</th>
               </tr>
             </thead>
             <tbody>
@@ -334,6 +353,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= (int)$row['out_of_stock'] ?></td>
                 <td><?= e($row['status']) ?></td>
                 <td><?= e($row['error']) ?></td>
+                <td><?= e((string)($row['request_url'] ?? '')) ?></td>
+                <td><?= e((string)($row['request_method'] ?? '')) ?></td>
+                <td><?= e((string)($row['status_code'] ?? '')) ?></td>
+                <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['request_payload_xml'] ?? '')) ?></pre></td>
+                <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre></td>
               </tr>
               <?php endforeach; ?>
             </tbody>
