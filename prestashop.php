@@ -423,36 +423,14 @@ function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string
 }
 
 function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): array {
-  $getPath = '/api/products/' . $idProduct;
-  $getResponse = ps_request_with_credentials('GET', $getPath, $baseUrl, $apiKey, null, ['Accept: application/xml']);
-  if ($getResponse['code'] < 200 || $getResponse['code'] >= 300) {
-    throw new PsRequestException(
-      "No se pudo leer product #{$idProduct} (HTTP {$getResponse['code']}).",
-      [
-        'url' => (string)($getResponse['url'] ?? ''),
-        'method' => 'GET',
-        'status_code' => (int)$getResponse['code'],
-        'request_payload_xml' => '',
-        'response_body_xml' => ps_truncate_text((string)($getResponse['body'] ?? '')),
-      ]
-    );
-  }
-
-  $sx = ps_xml_load((string)$getResponse['body']);
-  if (!isset($sx->product)) {
-    throw new RuntimeException('Respuesta inválida al leer producto de PrestaShop.');
-  }
-
-  if (!isset($sx->product->id) || trim((string)$sx->product->id) === '') {
-    $sx->product->addChild('id', (string)$idProduct);
-  } else {
-    $sx->product->id = (string)$idProduct;
-  }
-  $sx->product->active = $active > 0 ? '1' : '0';
-  $xml = $sx->asXML();
-  if ($xml === false) {
-    throw new RuntimeException('No se pudo generar XML para actualizar product.active.');
-  }
+  $normalizedActive = $active > 0 ? '1' : '0';
+  $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<prestashop xmlns:xlink="http://www.w3.org/1999/xlink">'
+    . '<product>'
+    . '<id>' . $idProduct . '</id>'
+    . '<active>' . $normalizedActive . '</active>'
+    . '</product>'
+    . '</prestashop>';
 
   $putResponse = ps_request_with_credentials(
     'PUT',
@@ -499,23 +477,14 @@ function ps_update_product_out_of_stock_by_product_with_credentials(int $idProdu
     $idStock = ps_create_stock_available_with_credentials($idProduct, 0, 0, $baseUrl, $apiKey);
   }
 
-  $r = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
-  if ($r['code'] < 200 || $r['code'] >= 300) {
-    throw new RuntimeException("No se pudo leer stock_available #{$idStock} (HTTP {$r['code']}).");
-  }
-
-  $sx = ps_xml_load($r['body']);
-  if (!isset($sx->stock_available)) {
-    throw new RuntimeException('Respuesta inválida al leer stock_available de PrestaShop.');
-  }
-
   $normalized = in_array($outOfStock, [0, 1, 2], true) ? $outOfStock : 2;
-  $sx->stock_available->out_of_stock = (string)$normalized;
-
-  $xml = $sx->asXML();
-  if ($xml === false) {
-    throw new RuntimeException('No se pudo generar XML para actualizar out_of_stock.');
-  }
+  $xml = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<prestashop xmlns:xlink="http://www.w3.org/1999/xlink">'
+    . '<stock_available>'
+    . '<id>' . $idStock . '</id>'
+    . '<out_of_stock>' . $normalized . '</out_of_stock>'
+    . '</stock_available>'
+    . '</prestashop>';
 
   $put = ps_request_with_credentials('PUT', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, $xml);
   if (!in_array((int)$put['code'], [200, 201], true)) {
