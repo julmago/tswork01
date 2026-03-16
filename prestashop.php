@@ -267,7 +267,11 @@ function ps_find_by_reference_all(string $sku, ?string $baseUrl = null, ?string 
  *  - ['type'=>'product','id_product'=>int,'id_product_attribute'=>0]
  */
 function ps_find_by_reference(string $sku): ?array {
-  $results = ps_find_by_reference_all($sku);
+  return ps_find_by_reference_with_credentials($sku, ps_base_url(), ps_api_key());
+}
+
+function ps_find_by_reference_with_credentials(string $sku, string $baseUrl, string $apiKey): ?array {
+  $results = ps_find_by_reference_all($sku, $baseUrl, $apiKey);
   if (!$results) {
     return null;
   }
@@ -429,6 +433,28 @@ function ps_extract_product_required_parameter_name(string $responseBody): ?stri
   return null;
 }
 
+function ps_extract_non_writable_product_fields(string $responseBody): array {
+  $patterns = [
+    '/parameter\s+([a-z0-9_]+)\s+is\s+not\s+writable/i',
+    '/parameter\s+([a-z0-9_]+)\s+not\s+writable/i',
+    '/property\s+[a-z0-9_\\\\]+->([a-z0-9_]+)\s+is\s+not\s+writable/i',
+    '/field\s+"([a-z0-9_]+)"\s+is\s+not\s+writable/i',
+    '/"([a-z0-9_]+)"\s+is\s+not\s+writable/i',
+  ];
+  $found = [];
+  foreach ($patterns as $pattern) {
+    if (preg_match_all($pattern, $responseBody, $matches) > 0) {
+      foreach (($matches[1] ?? []) as $field) {
+        $f = strtolower(trim((string)$field));
+        if ($f !== '') {
+          $found[$f] = true;
+        }
+      }
+    }
+  }
+  return array_keys($found);
+}
+
 function ps_get_product_field_value(SimpleXMLElement $productNode, string $field): ?string {
   if (!isset($productNode->{$field})) {
     return null;
@@ -451,81 +477,56 @@ function ps_get_product_field_canonical(SimpleXMLElement $productNode, string $f
   return trim($canonical);
 }
 
-function ps_remove_product_non_writable_fields(SimpleXMLElement $productNode): void {
-  $nonWritableFields = [
-    'manufacturer_name',
-    'quantity',
-    'position_in_category',
-    'id_default_combination',
-    'cache_default_attribute',
-    'advanced_stock_management',
-    'pack_stock_type',
-  ];
-
-  foreach ($nonWritableFields as $field) {
-    if (isset($productNode->{$field})) {
-      unset($productNode->{$field});
-    }
-  }
-}
-
 function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): array {
   $normalizedActive = $active > 0 ? '1' : '0';
 
-  $originalProductXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
-  $originalProductNode = isset($originalProductXml->product) ? $originalProductXml->product : $originalProductXml;
+  $protectedFields = ['name', 'description', 'price', 'associations'];
+  $removedFields = [];
+  $attempts = 0;
+  $lastDetails = [];
 
-  $beforeFields = [
-    'name' => ps_get_product_field_canonical($originalProductNode, 'name'),
-    'description' => ps_get_product_field_canonical($originalProductNode, 'description'),
-    'price' => ps_get_product_field_canonical($originalProductNode, 'price'),
-  ];
+  while ($attempts < 4) {
+    $attempts++;
+    $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+    $productNode = isset($productXml->product) ? $productXml->product : $productXml;
+    $productNode->active = $normalizedActive;
 
-  if ($beforeFields['price'] === '') {
-    $message = "No se pudo actualizar product.active para #{$idProduct}: falta campo requerido price en GET de producto.";
-    throw new PsRequestException($message, [
-      'method' => 'GET',
-      'status_code' => 0,
-      'request_payload_xml' => '',
-      'response_body_xml' => 'Campo price ausente en /api/products/' . $idProduct,
-    ]);
-  }
+    foreach ($removedFields as $field => $_true) {
+      if (isset($productNode->{$field})) {
+        unset($productNode->{$field});
+      }
+    }
 
-  $originalProductNode->active = $normalizedActive;
-  ps_remove_product_non_writable_fields($originalProductNode);
+    $payloadXml = $productXml->asXML();
+    if ($payloadXml === false) {
+      throw new RuntimeException("No se pudo generar XML para actualizar product.active #{$idProduct}.");
+    }
 
-  $payloadXml = $originalProductXml->asXML();
-  if ($payloadXml === false) {
-    throw new RuntimeException("No se pudo generar XML para actualizar product.active #{$idProduct}.");
-  }
+    $putResponse = ps_request_with_credentials(
+      'PUT',
+      '/api/products/' . $idProduct,
+      $baseUrl,
+      $apiKey,
+      $payloadXml,
+      [
+        'Content-Type: application/xml',
+        'Accept: application/xml',
+      ]
+    );
 
-  $putResponse = ps_request_with_credentials(
-    'PUT',
-    '/api/products/' . $idProduct,
-    $baseUrl,
-    $apiKey,
-    $payloadXml,
-    [
-      'Content-Type: application/xml',
-      'Accept: application/xml',
-    ]
-  );
+    $details = [
+      'url' => (string)($putResponse['url'] ?? ''),
+      'method' => 'PUT',
+      'status_code' => (int)$putResponse['code'],
+      'request_payload_xml' => ps_truncate_text($payloadXml),
+      'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
+    ];
+    $lastDetails = $details;
 
-  $details = [
-    'url' => (string)($putResponse['url'] ?? ''),
-    'method' => 'PUT',
-    'status_code' => (int)$putResponse['code'],
-    'request_payload_xml' => ps_truncate_text($payloadXml),
-    'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
-  ];
+    if (in_array((int)$putResponse['code'], [200, 201], true)) {
+      return $details;
+    }
 
-  error_log('[PrestaShop] product.active update debug => URL: ' . $details['url']);
-  error_log('[PrestaShop] product.active update debug => Method: PUT');
-  error_log('[PrestaShop] product.active update debug => Status: ' . (int)$details['status_code']);
-  error_log('[PrestaShop] product.active update debug => Payload XML: ' . (string)$details['request_payload_xml']);
-  error_log('[PrestaShop] product.active update debug => Response XML: ' . (string)$details['response_body_xml']);
-
-  if (!in_array((int)$putResponse['code'], [200, 201], true)) {
     $body = (string)($putResponse['body'] ?? '');
     if (in_array((int)$putResponse['code'], [401, 403], true)
       || stripos($body, 'permission') !== false
@@ -533,27 +534,28 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       throw new PsRequestException('Permisos insuficientes: habilitar PUT products en PrestaShop Webservice.', $details);
     }
 
-    throw new PsRequestException("Falló actualización de product.active para #{$idProduct} (HTTP " . (int)$putResponse['code'] . ').', $details);
-  }
+    $rejectFields = ps_extract_non_writable_product_fields($body);
+    if (!$rejectFields) {
+      throw new PsRequestException("Falló actualización de product.active para #{$idProduct} (HTTP " . (int)$putResponse['code'] . ').', $details);
+    }
 
-  $updatedProductXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
-  $updatedProductNode = isset($updatedProductXml->product) ? $updatedProductXml->product : $updatedProductXml;
-  $afterFields = [
-    'name' => ps_get_product_field_canonical($updatedProductNode, 'name'),
-    'description' => ps_get_product_field_canonical($updatedProductNode, 'description'),
-    'price' => ps_get_product_field_canonical($updatedProductNode, 'price'),
-  ];
+    $newlyAccepted = false;
+    foreach ($rejectFields as $field) {
+      if (in_array($field, $protectedFields, true)) {
+        throw new PsRequestException("PrestaShop rechazó campo protegido '{$field}' al actualizar product.active #{$idProduct}.", $details);
+      }
+      if (!isset($removedFields[$field])) {
+        $removedFields[$field] = true;
+        $newlyAccepted = true;
+      }
+    }
 
-  foreach (['name', 'description', 'price'] as $field) {
-    if ($beforeFields[$field] !== $afterFields[$field]) {
-      throw new PsRequestException(
-        "Validación post-PUT falló para product #{$idProduct}: el campo {$field} cambió inesperadamente.",
-        $details
-      );
+    if (!$newlyAccepted) {
+      throw new PsRequestException("Falló actualización de product.active para #{$idProduct} (HTTP " . (int)$putResponse['code'] . ').', $details);
     }
   }
 
-  return $details;
+  throw new PsRequestException("Falló actualización de product.active para #{$idProduct} luego de múltiples intentos.", $lastDetails);
 }
 
 function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): void {
@@ -563,15 +565,23 @@ function ps_update_product_out_of_stock_by_product_with_credentials(int $idProdu
   }
 
   $normalized = in_array($outOfStock, [0, 1, 2], true) ? $outOfStock : 2;
-  $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-    . '<prestashop xmlns:xlink="http://www.w3.org/1999/xlink">'
-    . '<stock_available>'
-    . '<id>' . $idStock . '</id>'
-    . '<out_of_stock>' . $normalized . '</out_of_stock>'
-    . '</stock_available>'
-    . '</prestashop>';
+  $get = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
+  if (!in_array((int)$get['code'], [200, 201], true)) {
+    throw new RuntimeException("No se pudo leer stock_available #{$idStock} (HTTP {$get['code']}).");
+  }
 
-  $put = ps_request_with_credentials('PUT', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, $xml);
+  $stockXml = ps_xml_load((string)$get['body']);
+  $stockNode = isset($stockXml->stock_available) ? $stockXml->stock_available : $stockXml;
+  $stockNode->out_of_stock = (string)$normalized;
+  $xml = $stockXml->asXML();
+  if ($xml === false) {
+    throw new RuntimeException("No se pudo generar XML para stock_available #{$idStock}.");
+  }
+
+  $put = ps_request_with_credentials('PUT', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, $xml, [
+    'Content-Type: application/xml',
+    'Accept: application/xml',
+  ]);
   if (!in_array((int)$put['code'], [200, 201], true)) {
     throw new RuntimeException("Falló actualización out_of_stock para stock_available #{$idStock} (HTTP {$put['code']}).");
   }
