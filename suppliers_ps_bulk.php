@@ -78,6 +78,60 @@ function ps_bulk_parse_csv_first_column(string $path): array {
   return $rows;
 }
 
+function ps_bulk_reference_candidates(array $item): array {
+  $candidates = [];
+  $tsw = trim((string)($item['sku'] ?? ''));
+  $sup = trim((string)($item['supplier_sku'] ?? ''));
+
+  if ($tsw !== '') {
+    $candidates[] = $tsw;
+  }
+  if ($sup !== '' && $sup !== $tsw) {
+    $candidates[] = $sup;
+  }
+
+  if ($sup !== '') {
+    if (str_starts_with($sup, 'SS-')) {
+      $withoutPrefix = substr($sup, 3);
+      if ($withoutPrefix !== '' && !in_array($withoutPrefix, $candidates, true)) {
+        $candidates[] = $withoutPrefix;
+      }
+    } else {
+      $withPrefix = 'SS-' . $sup;
+      if (!in_array($withPrefix, $candidates, true)) {
+        $candidates[] = $withPrefix;
+      }
+    }
+  }
+
+  return $candidates;
+}
+
+function ps_bulk_resolve_product_id(array $item, string $baseUrl, string $apiKey, ?array &$testedCandidates = null): ?int {
+  $candidates = ps_bulk_reference_candidates($item);
+  $testedCandidates = $candidates;
+
+  foreach ($candidates as $candidate) {
+    $results = ps_find_by_reference_all($candidate, $baseUrl, $apiKey);
+    if (empty($results)) {
+      continue;
+    }
+
+    foreach ($results as $result) {
+      if (($result['type'] ?? '') === 'product' && (int)($result['id_product'] ?? 0) > 0) {
+        return (int)$result['id_product'];
+      }
+    }
+
+    $id = (int)($results[0]['id_product'] ?? 0);
+    if ($id > 0) {
+      return $id;
+    }
+  }
+
+  return null;
+}
+
 $csvSkus = ps_bulk_parse_csv_first_column($csvPath);
 if (count($csvSkus) === 0) {
   abort(400, 'El CSV no contiene SKUs válidos en la primera columna.');
@@ -152,10 +206,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
 
       if (!$remoteProductId) {
+        $testedCandidates = [];
         try {
-          $match = ps_find_by_reference_with_credentials($item['sku'], $psBaseUrl, $psApiKey);
-          if ($match) {
-            $remoteProductId = (int)$match['id_product'];
+          $remoteProductId = ps_bulk_resolve_product_id($item, $psBaseUrl, $psApiKey, $testedCandidates);
+          if ($remoteProductId > 0) {
+            $mapUpsertSt = $pdo->prepare("INSERT INTO site_product_map(site_id, product_id, remote_id, updated_at)
+              VALUES(?,?,?,NOW())
+              ON DUPLICATE KEY UPDATE remote_id = VALUES(remote_id), updated_at = NOW()");
+            $mapUpsertSt->execute([$siteId, $productId, (string)$remoteProductId]);
           }
         } catch (Throwable $t) {
           $results[] = [
@@ -172,6 +230,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
 
       if (!$remoteProductId) {
+        $candidateText = implode(', ', $testedCandidates ?? ps_bulk_reference_candidates($item));
         $results[] = [
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
@@ -179,7 +238,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'active' => $activeValue,
           'out_of_stock' => $outOfStockValue,
           'status' => 'ERROR',
-          'error' => 'No se pudo resolver id_product en PrestaShop.',
+          'error' => 'No se pudo resolver id_product en PrestaShop. Probé: ' . $candidateText,
         ];
         continue;
       }
