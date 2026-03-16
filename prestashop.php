@@ -491,7 +491,11 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
     $attempts++;
     $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
     $productNode = isset($productXml->product) ? $productXml->product : $productXml;
+    $refBefore = isset($productNode->reference) ? (string)$productNode->reference : '';
     $productNode->active = $normalizedActive;
+    // Salvaguarda: nunca permitir que esta rutina modifique SKU/reference.
+    $productNode->reference = $refBefore;
+    $refAfter = isset($productNode->reference) ? (string)$productNode->reference : '';
 
     foreach ($removedFields as $field => $_true) {
       if (isset($productNode->{$field})) {
@@ -520,6 +524,8 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       'url' => (string)($putResponse['url'] ?? ''),
       'method' => 'PUT',
       'status_code' => (int)$putResponse['code'],
+      'reference_before' => $refBefore,
+      'reference_after' => $refAfter,
       'request_payload_xml' => ps_truncate_text($payloadXml),
       'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
     ];

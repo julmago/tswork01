@@ -11,6 +11,8 @@ if (!can_suppliers_ps_bulk()) {
 
 ensure_stock_sync_schema();
 
+$bulkDebugEnabled = defined('DEBUG') && DEBUG;
+
 $pdo = db();
 $supplierId = (int)($_SESSION['ps_bulk_supplier_id'] ?? 0);
 $siteId = (int)($_SESSION['ps_bulk_site_id'] ?? 0);
@@ -221,7 +223,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     $includedProductIds = [];
 
-    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results): bool {
+    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled): bool {
       $productId = (int)$item['product_id'];
       $remoteProductId = null;
       $mapSt = $pdo->prepare('SELECT remote_id FROM site_product_map WHERE site_id = ? AND product_id = ? LIMIT 1');
@@ -275,7 +277,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $setActive, $psBaseUrl, $psApiKey);
         ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey);
 
-        $results[] = [
+        $resultRow = [
           'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
@@ -289,6 +291,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
           'response_body_xml' => '',
         ];
+        if ($bulkDebugEnabled) {
+          $resultRow['reference_before'] = (string)($activeUpdateDebug['reference_before'] ?? '');
+          $resultRow['reference_after'] = (string)($activeUpdateDebug['reference_after'] ?? '');
+        }
+        $results[] = $resultRow;
         return true;
       } catch (Throwable $t) {
         $debug = [];
@@ -497,6 +504,10 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>Request URL</th>
                 <th>Método</th>
                 <th>HTTP</th>
+                <?php if ($bulkDebugEnabled): ?>
+                  <th>reference_before</th>
+                  <th>reference_after</th>
+                <?php endif; ?>
                 <th>Response XML (recortado)</th>
               </tr>
             </thead>
@@ -514,6 +525,10 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= e((string)($row['request_url'] ?? '')) ?></td>
                 <td><?= e((string)($row['request_method'] ?? '')) ?></td>
                 <td><?= e((string)($row['status_code'] ?? '')) ?></td>
+                <?php if ($bulkDebugEnabled): ?>
+                  <td><?= e((string)($row['reference_before'] ?? '')) ?></td>
+                  <td><?= e((string)($row['reference_after'] ?? '')) ?></td>
+                <?php endif; ?>
                 <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre></td>
               </tr>
               <?php endforeach; ?>
