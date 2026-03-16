@@ -153,9 +153,9 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
       if (!$remoteProductId) {
         try {
-          $match = ps_find_by_reference_all($item['sku'], $psBaseUrl, $psApiKey);
-          if (count($match) > 0) {
-            $remoteProductId = (int)$match[0]['id_product'];
+          $match = ps_find_by_reference_with_credentials($item['sku'], $psBaseUrl, $psApiKey);
+          if ($match) {
+            $remoteProductId = (int)$match['id_product'];
           }
         } catch (Throwable $t) {
           $results[] = [
@@ -199,8 +199,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'request_url' => (string)($activeUpdateDebug['url'] ?? ''),
           'request_method' => (string)($activeUpdateDebug['method'] ?? 'PUT'),
           'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
-          'request_payload_xml' => (string)($activeUpdateDebug['request_payload_xml'] ?? ''),
-          'response_body_xml' => (string)($activeUpdateDebug['response_body_xml'] ?? ''),
+          'response_body_xml' => '',
         ];
       } catch (Throwable $t) {
         $debug = [];
@@ -218,7 +217,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'request_url' => (string)($debug['url'] ?? ''),
           'request_method' => (string)($debug['method'] ?? 'PUT'),
           'status_code' => (string)($debug['status_code'] ?? ''),
-          'request_payload_xml' => (string)($debug['request_payload_xml'] ?? ''),
           'response_body_xml' => (string)($debug['response_body_xml'] ?? ''),
         ];
       }
@@ -339,7 +337,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>Request URL</th>
                 <th>Método</th>
                 <th>HTTP</th>
-                <th>Payload XML (recortado)</th>
                 <th>Response XML (recortado)</th>
               </tr>
             </thead>
@@ -356,7 +353,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= e((string)($row['request_url'] ?? '')) ?></td>
                 <td><?= e((string)($row['request_method'] ?? '')) ?></td>
                 <td><?= e((string)($row['status_code'] ?? '')) ?></td>
-                <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['request_payload_xml'] ?? '')) ?></pre></td>
                 <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre></td>
               </tr>
               <?php endforeach; ?>
