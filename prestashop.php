@@ -482,7 +482,7 @@ function ps_get_product_field_canonical(SimpleXMLElement $productNode, string $f
 function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): array {
   $normalizedActive = $active > 0 ? '1' : '0';
 
-  $protectedFields = ['name', 'description', 'price', 'associations'];
+  $protectedFields = ['name', 'description', 'price', 'reference', 'associations'];
   $removedFields = ['manufacturer_name' => true, 'quantity' => true, 'position_in_category' => true];
   $attempts = 0;
   $lastDetails = [];
@@ -490,16 +490,24 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
   while ($attempts < 4) {
     $attempts++;
     $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
-    $productNode = isset($productXml->product) ? $productXml->product : $productXml;
-    $refBefore = isset($productNode->reference) ? (string)$productNode->reference : '';
-    $productNode->active = $normalizedActive;
+    $originalProductNode = isset($productXml->product) ? $productXml->product : $productXml;
+    $referenceBefore = isset($originalProductNode->reference) ? (string)$originalProductNode->reference : '';
+    $beforeFields = [
+      'name' => ps_get_product_field_canonical($originalProductNode, 'name'),
+      'description' => ps_get_product_field_canonical($originalProductNode, 'description'),
+      'price' => ps_get_product_field_canonical($originalProductNode, 'price'),
+      'reference' => ps_get_product_field_canonical($originalProductNode, 'reference'),
+    ];
+
+    $originalProductNode->active = $normalizedActive;
     // Salvaguarda: nunca permitir que esta rutina modifique SKU/reference.
-    $productNode->reference = $refBefore;
-    $refAfter = isset($productNode->reference) ? (string)$productNode->reference : '';
+    if (isset($originalProductNode->reference)) {
+      $originalProductNode->reference = $referenceBefore;
+    }
 
     foreach ($removedFields as $field => $_true) {
-      if (isset($productNode->{$field})) {
-        unset($productNode->{$field});
+      if (isset($originalProductNode->{$field})) {
+        unset($originalProductNode->{$field});
       }
     }
 
@@ -524,14 +532,39 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       'url' => (string)($putResponse['url'] ?? ''),
       'method' => 'PUT',
       'status_code' => (int)$putResponse['code'],
-      'reference_before' => $refBefore,
-      'reference_after' => $refAfter,
       'request_payload_xml' => ps_truncate_text($payloadXml),
       'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
     ];
+
+    if (defined('DEBUG') && DEBUG) {
+      $details['reference_before'] = $referenceBefore;
+      $details['reference_after'] = isset($originalProductNode->reference) ? (string)$originalProductNode->reference : '';
+    }
+
     $lastDetails = $details;
 
     if (in_array((int)$putResponse['code'], [200, 201], true)) {
+      $updatedProductXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+      $updatedProductNode = isset($updatedProductXml->product) ? $updatedProductXml->product : $updatedProductXml;
+      $afterFields = [
+        'name' => ps_get_product_field_canonical($updatedProductNode, 'name'),
+        'description' => ps_get_product_field_canonical($updatedProductNode, 'description'),
+        'price' => ps_get_product_field_canonical($updatedProductNode, 'price'),
+        'reference' => ps_get_product_field_canonical($updatedProductNode, 'reference'),
+      ];
+
+      foreach (['name', 'description', 'price', 'reference'] as $field) {
+        if (($beforeFields[$field] ?? '') !== ($afterFields[$field] ?? '')) {
+          $details['before_fields'] = $beforeFields;
+          $details['after_fields'] = $afterFields;
+          throw new PsRequestException("PrestaShop modificó el campo protegido '{$field}' al actualizar product.active #{$idProduct}.", $details);
+        }
+      }
+
+      if (defined('DEBUG') && DEBUG) {
+        $details['reference_after'] = isset($updatedProductNode->reference) ? (string)$updatedProductNode->reference : '';
+      }
+
       return $details;
     }
 
