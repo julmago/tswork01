@@ -163,9 +163,26 @@ foreach ($csvSkus as $skuProv) {
   }
 }
 
+$foundProductIds = array_map(static fn(array $item): int => (int)$item['product_id'], array_values($found));
+$nonListedDetectedCount = 0;
+if (count($foundProductIds) > 0) {
+  $placeholders = implode(',', array_fill(0, count($foundProductIds), '?'));
+  $countSt = $pdo->prepare("SELECT COUNT(DISTINCT product_id) FROM product_suppliers WHERE supplier_id = ? AND product_id NOT IN ({$placeholders})");
+  $countSt->execute(array_merge([$supplierId], $foundProductIds));
+  $nonListedDetectedCount = (int)$countSt->fetchColumn();
+} else {
+  $countSt = $pdo->prepare('SELECT COUNT(DISTINCT product_id) FROM product_suppliers WHERE supplier_id = ?');
+  $countSt->execute([$supplierId]);
+  $nonListedDetectedCount = (int)$countSt->fetchColumn();
+}
+
 $results = [];
 $applyError = '';
 $applySuccess = '';
+$includedOkCount = 0;
+$includedTotalCount = 0;
+$nonListedOkCount = 0;
+$nonListedTotalCount = 0;
 
 if (is_post() && post('action') === 'ps_bulk_apply') {
   if (!can_suppliers_ps_bulk()) {
@@ -191,12 +208,21 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       $selected = [];
     }
 
-    foreach ($found as $item) {
-      $productId = (int)$item['product_id'];
-      if (!isset($selected[$productId])) {
-        continue;
-      }
+    $applyToNonListed = post('apply_to_non_listed', '0') === '1';
+    $nonListedOfflineMode = post('non_listed_active_mode', 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
+    $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
+    $nonListedStockMode = post('non_listed_outofstock_mode', 'default');
+    $nonListedOutOfStockValue = 2;
+    if ($nonListedStockMode === 'deny') {
+      $nonListedOutOfStockValue = 0;
+    } elseif ($nonListedStockMode === 'allow') {
+      $nonListedOutOfStockValue = 1;
+    }
 
+    $includedProductIds = [];
+
+    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results): bool {
+      $productId = (int)$item['product_id'];
       $remoteProductId = null;
       $mapSt = $pdo->prepare('SELECT remote_id FROM site_product_map WHERE site_id = ? AND product_id = ? LIMIT 1');
       $mapSt->execute([$siteId, $productId]);
@@ -217,42 +243,45 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           }
         } catch (Throwable $t) {
           $results[] = [
+            'scope' => $scopeLabel,
             'supplier_sku' => $item['supplier_sku'],
             'sku' => $item['sku'],
             'ps_product_id' => '',
-            'active' => $activeValue,
-            'out_of_stock' => $outOfStockValue,
+            'active' => $setActive,
+            'out_of_stock' => $setOutOfStock,
             'status' => 'ERROR',
             'error' => $t->getMessage(),
           ];
-          continue;
+          return false;
         }
       }
 
       if (!$remoteProductId) {
         $candidateText = implode(', ', $testedCandidates ?? ps_bulk_reference_candidates($item));
         $results[] = [
+          'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => '',
-          'active' => $activeValue,
-          'out_of_stock' => $outOfStockValue,
+          'active' => $setActive,
+          'out_of_stock' => $setOutOfStock,
           'status' => 'ERROR',
           'error' => 'No se pudo resolver id_product en PrestaShop. Probé: ' . $candidateText,
         ];
-        continue;
+        return false;
       }
 
       try {
-        $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $activeValue, $psBaseUrl, $psApiKey);
-        ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $outOfStockValue, $psBaseUrl, $psApiKey);
+        $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $setActive, $psBaseUrl, $psApiKey);
+        ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey);
 
         $results[] = [
+          'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => (string)$remoteProductId,
-          'active' => $activeValue,
-          'out_of_stock' => $outOfStockValue,
+          'active' => $setActive,
+          'out_of_stock' => $setOutOfStock,
           'status' => 'OK',
           'error' => '',
           'request_url' => (string)($activeUpdateDebug['url'] ?? ''),
@@ -260,17 +289,19 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
           'response_body_xml' => '',
         ];
+        return true;
       } catch (Throwable $t) {
         $debug = [];
         if ($t instanceof PsRequestException) {
           $debug = $t->details;
         }
         $results[] = [
+          'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => (string)$remoteProductId,
-          'active' => $activeValue,
-          'out_of_stock' => $outOfStockValue,
+          'active' => $setActive,
+          'out_of_stock' => $setOutOfStock,
           'status' => 'ERROR',
           'error' => $t->getMessage(),
           'request_url' => (string)($debug['url'] ?? ''),
@@ -278,17 +309,61 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'status_code' => (string)($debug['status_code'] ?? ''),
           'response_body_xml' => (string)($debug['response_body_xml'] ?? ''),
         ];
+        return false;
+      }
+    };
+
+    foreach ($found as $item) {
+      $productId = (int)$item['product_id'];
+      if (!isset($selected[$productId])) {
+        continue;
+      }
+
+      $includedProductIds[] = $productId;
+      $includedTotalCount++;
+      if ($applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV')) {
+        $includedOkCount++;
       }
     }
 
-    if (count($results) > 0) {
-      $okCount = 0;
-      foreach ($results as $r) {
-        if ($r['status'] === 'OK') {
-          $okCount++;
+    if ($applyToNonListed) {
+      $nonListedItems = [];
+      if (count($includedProductIds) > 0) {
+        $placeholders = implode(',', array_fill(0, count($includedProductIds), '?'));
+        $nonListedSt = $pdo->prepare("SELECT p.id, p.sku, p.name, ps.supplier_sku
+          FROM product_suppliers ps
+          INNER JOIN products p ON p.id = ps.product_id
+          WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})
+          GROUP BY p.id, p.sku, p.name, ps.supplier_sku");
+        $nonListedSt->execute(array_merge([$supplierId], $includedProductIds));
+      } else {
+        $nonListedSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
+          FROM product_suppliers ps
+          INNER JOIN products p ON p.id = ps.product_id
+          WHERE ps.supplier_id = ?
+          GROUP BY p.id, p.sku, p.name, ps.supplier_sku');
+        $nonListedSt->execute([$supplierId]);
+      }
+
+      while ($row = $nonListedSt->fetch()) {
+        $nonListedItems[] = [
+          'product_id' => (int)$row['id'],
+          'supplier_sku' => (string)$row['supplier_sku'],
+          'sku' => (string)$row['sku'],
+          'name' => (string)$row['name'],
+        ];
+      }
+
+      $nonListedTotalCount = count($nonListedItems);
+      foreach ($nonListedItems as $item) {
+        if ($applyProductChanges($item, $nonListedActiveValue, $nonListedOutOfStockValue, 'no incluido')) {
+          $nonListedOkCount++;
         }
       }
-      $applySuccess = "Proceso finalizado. OK: {$okCount} / " . count($results);
+    }
+
+    if ($includedTotalCount > 0 || $nonListedTotalCount > 0) {
+      $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}. No incluidos actualizados: {$nonListedOkCount} / {$nonListedTotalCount}.";
     } else {
       $applyError = 'No hay productos seleccionados para aplicar.';
     }
@@ -350,6 +425,31 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           <label><input type="radio" name="out_of_stock_mode" value="default" checked> Usar comportamiento predeterminado (Denegar pedidos)</label>
         </div>
 
+        <div class="form-field">
+          <span class="form-label">Productos del proveedor no incluidos en el CSV</span>
+          <label><input type="radio" name="apply_to_non_listed" value="0" checked> No hacer nada</label><br>
+          <label><input type="radio" name="apply_to_non_listed" value="1"> Hacer cambios</label>
+          <div class="muted" style="margin-top:var(--space-2)">No incluidos detectados: <strong><?= (int)$nonListedDetectedCount ?></strong></div>
+        </div>
+
+        <div id="non-listed-options" class="card stack" style="display:none">
+          <h4 style="margin:0">Configuración para NO incluidos</h4>
+          <div class="form-field">
+            <span class="form-label">Fuera de línea (para NO incluidos)</span>
+            <select class="form-control" name="non_listed_active_mode">
+              <option value="en_linea">En línea</option>
+              <option value="fuera_linea">Fuera de línea</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <span class="form-label">Cuando no haya existencias (para NO incluidos)</span>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="deny"> Denegar pedidos</label><br>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="allow"> Permitir pedidos</label><br>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="default" checked> Usar comportamiento predeterminado</label>
+          </div>
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -388,6 +488,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               <tr>
                 <th>SKU proveedor</th>
                 <th>SKU TSWork</th>
+                <th>Origen</th>
                 <th>PS product id</th>
                 <th>active set</th>
                 <th>out_of_stock set</th>
@@ -404,6 +505,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               <tr>
                 <td><?= e($row['supplier_sku']) ?></td>
                 <td><?= e($row['sku']) ?></td>
+                <td><?= e((string)($row['scope'] ?? 'incluido CSV')) ?></td>
                 <td><?= e((string)$row['ps_product_id']) ?></td>
                 <td><?= (int)$row['active'] ?></td>
                 <td><?= (int)$row['out_of_stock'] ?></td>
@@ -422,5 +524,25 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     <?php endif; ?>
   </div>
 </main>
+<script>
+  (function () {
+    const options = document.getElementById('non-listed-options');
+    const radios = document.querySelectorAll('input[name="apply_to_non_listed"]');
+    if (!options || radios.length === 0) {
+      return;
+    }
+
+    function toggleOptions() {
+      const selected = document.querySelector('input[name="apply_to_non_listed"]:checked');
+      options.style.display = selected && selected.value === '1' ? 'block' : 'none';
+    }
+
+    radios.forEach((radio) => {
+      radio.addEventListener('change', toggleOptions);
+    });
+
+    toggleOptions();
+  })();
+</script>
 </body>
 </html>
