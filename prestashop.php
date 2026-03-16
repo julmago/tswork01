@@ -437,6 +437,8 @@ function ps_extract_non_writable_product_fields(string $responseBody): array {
   $patterns = [
     '/parameter\s+([a-z0-9_]+)\s+is\s+not\s+writable/i',
     '/parameter\s+([a-z0-9_]+)\s+not\s+writable/i',
+    '/parameter\s+"([a-z0-9_]+)".*is\s+not\s+writable/i',
+    '/parameter\s+"([a-z0-9_]+)".*not\s+writable/i',
     '/property\s+[a-z0-9_\\\\]+->([a-z0-9_]+)\s+is\s+not\s+writable/i',
     '/field\s+"([a-z0-9_]+)"\s+is\s+not\s+writable/i',
     '/"([a-z0-9_]+)"\s+is\s+not\s+writable/i',
@@ -481,7 +483,7 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
   $normalizedActive = $active > 0 ? '1' : '0';
 
   $protectedFields = ['name', 'description', 'price', 'associations'];
-  $removedFields = [];
+  $removedFields = ['manufacturer_name' => true, 'quantity' => true, 'position_in_category' => true];
   $attempts = 0;
   $lastDetails = [];
 
