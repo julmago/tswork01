@@ -254,6 +254,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
             'out_of_stock' => $setOutOfStock,
             'status' => 'ERROR',
             'error' => $t->getMessage(),
+            'relink' => '',
           ];
           return false;
         }
@@ -280,6 +281,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         $expectedSku = trim((string)($item['supplier_sku'] ?? ''));
       }
 
+      $relinkMessage = '';
       if ($respectSkuManualChanges) {
         try {
           $referenceActual = ps_get_product_reference_with_credentials((int)$remoteProductId, $psBaseUrl, $psApiKey);
@@ -293,22 +295,55 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
             'out_of_stock' => $setOutOfStock,
             'status' => 'ERROR',
             'error' => 'No se pudo validar reference actual: ' . $t->getMessage(),
+            'relink' => '',
           ];
           return false;
         }
 
         if ($referenceActual !== $expectedSku) {
-          $results[] = [
-            'scope' => $scopeLabel,
-            'supplier_sku' => $item['supplier_sku'],
-            'sku' => $item['sku'],
-            'ps_product_id' => (string)$remoteProductId,
-            'active' => $setActive,
-            'out_of_stock' => $setOutOfStock,
-            'status' => 'SKIPPED',
-            'error' => 'Referencia en PrestaShop fue modificada (actual=' . $referenceActual . ', esperado=' . $expectedSku . ').',
-          ];
-          return false;
+          $testedCandidates = [];
+          $newRemoteProductId = null;
+          try {
+            $newRemoteProductId = ps_bulk_resolve_product_id($item, $psBaseUrl, $psApiKey, $testedCandidates);
+          } catch (Throwable $t) {
+            $results[] = [
+              'scope' => $scopeLabel,
+              'supplier_sku' => $item['supplier_sku'],
+              'sku' => $item['sku'],
+              'ps_product_id' => (string)$remoteProductId,
+              'active' => $setActive,
+              'out_of_stock' => $setOutOfStock,
+              'status' => 'ERROR',
+              'error' => 'No se pudo resolver relink automático: ' . $t->getMessage(),
+              'relink' => '',
+            ];
+            return false;
+          }
+
+          if ($newRemoteProductId && (int)$newRemoteProductId !== (int)$remoteProductId) {
+            $oldRemoteProductId = (int)$remoteProductId;
+            $remoteProductId = (int)$newRemoteProductId;
+            $relinkMessage = 'RELINK ' . $oldRemoteProductId . ' -> ' . $remoteProductId;
+
+            $mapUpsertSt = $pdo->prepare("INSERT INTO site_product_map(site_id, product_id, remote_id, updated_at)
+              VALUES(?,?,?,NOW())
+              ON DUPLICATE KEY UPDATE remote_id = VALUES(remote_id), updated_at = NOW()");
+            $mapUpsertSt->execute([$siteId, $productId, (string)$remoteProductId]);
+          } else {
+            $candidateText = implode(', ', $testedCandidates ?: ps_bulk_reference_candidates($item));
+            $results[] = [
+              'scope' => $scopeLabel,
+              'supplier_sku' => $item['supplier_sku'],
+              'sku' => $item['sku'],
+              'ps_product_id' => (string)$remoteProductId,
+              'active' => $setActive,
+              'out_of_stock' => $setOutOfStock,
+              'status' => 'SKIPPED',
+              'error' => 'Referencia en PrestaShop fue modificada (actual=' . $referenceActual . ', esperado=' . $expectedSku . '). No se encontró relink automático. Probé: ' . $candidateText,
+              'relink' => '',
+            ];
+            return false;
+          }
         }
       }
 
@@ -325,6 +360,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'out_of_stock' => $setOutOfStock,
           'status' => 'OK',
           'error' => '',
+          'relink' => $relinkMessage,
           'request_url' => (string)($activeUpdateDebug['url'] ?? ''),
           'request_method' => (string)($activeUpdateDebug['method'] ?? 'PUT'),
           'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
@@ -350,6 +386,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'out_of_stock' => $setOutOfStock,
           'status' => 'ERROR',
           'error' => $t->getMessage(),
+          'relink' => $relinkMessage,
           'request_url' => (string)($debug['url'] ?? ''),
           'request_method' => (string)($debug['method'] ?? 'PUT'),
           'status_code' => (string)($debug['status_code'] ?? ''),
@@ -545,6 +582,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>active set</th>
                 <th>out_of_stock set</th>
                 <th>Estado</th>
+                <th>Relink</th>
                 <th>Error</th>
                 <th>Request URL</th>
                 <th>Método</th>
@@ -566,6 +604,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= (int)$row['active'] ?></td>
                 <td><?= (int)$row['out_of_stock'] ?></td>
                 <td><?= e($row['status']) ?></td>
+                <td><?= e((string)($row['relink'] ?? '')) ?></td>
                 <td><?= e($row['error']) ?></td>
                 <td><?= e((string)($row['request_url'] ?? '')) ?></td>
                 <td><?= e((string)($row['request_method'] ?? '')) ?></td>
