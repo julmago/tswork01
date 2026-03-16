@@ -211,6 +211,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     }
 
     $applyToNonListed = post('apply_to_non_listed', '0') === '1';
+    $respectSkuManualChanges = post('respect_sku_manual_changes', '1') === '1';
     $nonListedOfflineMode = post('non_listed_active_mode', 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
     $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
     $nonListedStockMode = post('non_listed_outofstock_mode', 'default');
@@ -223,7 +224,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     $includedProductIds = [];
 
-    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled): bool {
+    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges): bool {
       $productId = (int)$item['product_id'];
       $remoteProductId = null;
       $mapSt = $pdo->prepare('SELECT remote_id FROM site_product_map WHERE site_id = ? AND product_id = ? LIMIT 1');
@@ -271,6 +272,44 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'error' => 'No se pudo resolver id_product en PrestaShop. Probé: ' . $candidateText,
         ];
         return false;
+      }
+
+
+      $expectedSku = trim((string)($item['sku'] ?? ''));
+      if ($expectedSku === '') {
+        $expectedSku = trim((string)($item['supplier_sku'] ?? ''));
+      }
+
+      if ($respectSkuManualChanges) {
+        try {
+          $referenceActual = ps_get_product_reference_with_credentials((int)$remoteProductId, $psBaseUrl, $psApiKey);
+        } catch (Throwable $t) {
+          $results[] = [
+            'scope' => $scopeLabel,
+            'supplier_sku' => $item['supplier_sku'],
+            'sku' => $item['sku'],
+            'ps_product_id' => (string)$remoteProductId,
+            'active' => $setActive,
+            'out_of_stock' => $setOutOfStock,
+            'status' => 'ERROR',
+            'error' => 'No se pudo validar reference actual: ' . $t->getMessage(),
+          ];
+          return false;
+        }
+
+        if ($referenceActual !== $expectedSku) {
+          $results[] = [
+            'scope' => $scopeLabel,
+            'supplier_sku' => $item['supplier_sku'],
+            'sku' => $item['sku'],
+            'ps_product_id' => (string)$remoteProductId,
+            'active' => $setActive,
+            'out_of_stock' => $setOutOfStock,
+            'status' => 'SKIPPED',
+            'error' => 'Referencia en PrestaShop fue modificada (actual=' . $referenceActual . ', esperado=' . $expectedSku . ').',
+          ];
+          return false;
+        }
       }
 
       try {
@@ -430,6 +469,12 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           <label><input type="radio" name="out_of_stock_mode" value="deny"> Denegar pedidos</label><br>
           <label><input type="radio" name="out_of_stock_mode" value="allow"> Permitir pedidos</label><br>
           <label><input type="radio" name="out_of_stock_mode" value="default" checked> Usar comportamiento predeterminado (Denegar pedidos)</label>
+        </div>
+
+
+        <div class="form-field">
+          <label><input type="checkbox" name="respect_sku_manual_changes" value="1" checked> Respetar cambios manuales de SKU en PrestaShop</label>
+          <div class="muted" style="margin-top:var(--space-2)">Si la referencia actual del producto no coincide con el SKU esperado en TS Work, se marcará como SKIPPED y no se aplicarán cambios.</div>
         </div>
 
         <div class="form-field">

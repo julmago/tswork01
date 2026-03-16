@@ -426,6 +426,12 @@ function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string
   return ps_xml_load($r['body']);
 }
 
+function ps_get_product_reference_with_credentials(int $idProduct, string $baseUrl, string $apiKey): string {
+  $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+  $productNode = isset($productXml->product) ? $productXml->product : $productXml;
+  return trim((string)($productNode->reference ?? ''));
+}
+
 function ps_extract_product_required_parameter_name(string $responseBody): ?string {
   if (preg_match('/parameter\s+([a-z0-9_]+)\s+required/i', $responseBody, $m) === 1) {
     return strtolower(trim((string)$m[1]));
