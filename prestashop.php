@@ -68,24 +68,34 @@ function ps_has_header(array $headers, string $needle): bool {
   return false;
 }
 
-function ps_request(string $method, string $path, ?string $body = null, array $headers = []): array {
+
+function ps_with_shop_context(string $path, int $shopId = 0): string {
+  if ($shopId <= 0) {
+    return $path;
+  }
+
+  $separator = strpos($path, '?') === false ? '?' : '&';
+  return $path . $separator . 'id_shop=' . $shopId;
+}
+
+function ps_request(string $method, string $path, ?string $body = null, array $headers = [], int $shopId = 0): array {
   $base = ps_base_url();
   $key  = ps_api_key();
   if ($base === '' || $key === '') {
     throw new RuntimeException("Falta configurar PrestaShop (URL / API Key).");
   }
 
-  return ps_request_with_credentials($method, $path, $base, $key, $body, $headers);
+  return ps_request_with_credentials($method, $path, $base, $key, $body, $headers, $shopId);
 }
 
-function ps_request_with_credentials(string $method, string $path, string $base, string $key, ?string $body = null, array $headers = []): array {
+function ps_request_with_credentials(string $method, string $path, string $base, string $key, ?string $body = null, array $headers = [], int $shopId = 0): array {
   $base = ps_base_url_api($base);
   $key = trim($key);
   if ($base === '' || $key === '') {
     throw new RuntimeException("Falta configurar PrestaShop (URL / API Key).");
   }
 
-  $normalized = $path;
+  $normalized = ps_with_shop_context($path, $shopId);
   if (!str_starts_with($normalized, '/')) {
     $normalized = '/' . $normalized;
   }
@@ -287,17 +297,21 @@ function ps_find_stock_available_id(int $id_product, int $id_product_attribute):
   return ps_find_stock_available_id_with_credentials($id_product, $id_product_attribute, ps_base_url(), ps_api_key());
 }
 
-function ps_find_stock_available_id_with_credentials(int $id_product, int $id_product_attribute, string $baseUrl, string $apiKey): ?int {
+function ps_find_stock_available_id_with_credentials(int $id_product, int $id_product_attribute, string $baseUrl, string $apiKey, int $shopId = 0): ?int {
   $filter_attr = 0;
-  $query = http_build_query([
-    'display' => '[id,id_product,id_product_attribute,quantity]',
+  $params = [
+    'display' => '[id,id_product,id_product_attribute,quantity,id_shop]',
     'filter[id_product]' => '[' . $id_product . ']',
     'filter[id_product_attribute]' => '[' . $filter_attr . ']',
-  ], '', '&', PHP_QUERY_RFC3986);
+  ];
+  if ($shopId > 0) {
+    $params['filter[id_shop]'] = '[' . $shopId . ']';
+  }
+  $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
   $q = "/api/stock_availables?" . $query;
   $base = rtrim(trim($baseUrl), '/');
   error_log("[PrestaShop] Lookup stock_availables URL: " . $base . (str_starts_with($q, '/api') ? $q : '/api' . $q));
-  $r = ps_request_with_credentials("GET", $q, $baseUrl, $apiKey);
+  $r = ps_request_with_credentials("GET", $q, $baseUrl, $apiKey, null, [], $shopId);
   $snippet = substr($r['body'], 0, 500);
   error_log("[PrestaShop] stock_availables HTTP {$r['code']} | Body (first 500 chars): " . $snippet);
   if (!($r['code'] >= 200 && $r['code'] < 300)) {
@@ -390,7 +404,7 @@ function ps_create_stock_available(int $id_product, int $id_product_attribute, i
   return ps_create_stock_available_with_credentials($id_product, $id_product_attribute, $quantity, ps_base_url(), ps_api_key());
 }
 
-function ps_create_stock_available_with_credentials(int $id_product, int $id_product_attribute, int $quantity, string $baseUrl, string $apiKey): int {
+function ps_create_stock_available_with_credentials(int $id_product, int $id_product_attribute, int $quantity, string $baseUrl, string $apiKey, int $shopId = 0): int {
   $qty = max(0, $quantity);
   $sx = new SimpleXMLElement('<prestashop></prestashop>');
   $sa = $sx->addChild('stock_available');
@@ -399,13 +413,16 @@ function ps_create_stock_available_with_credentials(int $id_product, int $id_pro
   $sa->addChild('quantity', (string)$qty);
   $sa->addChild('depends_on_stock', '0');
   $sa->addChild('out_of_stock', '2');
+  if ($shopId > 0) {
+    $sa->addChild('id_shop', (string)$shopId);
+  }
 
   $xml = $sx->asXML();
   if ($xml === false) {
     throw new RuntimeException("No se pudo generar XML para crear stock.");
   }
 
-  $r = ps_request_with_credentials("POST", "/api/stock_availables", $baseUrl, $apiKey, $xml);
+  $r = ps_request_with_credentials("POST", "/api/stock_availables", $baseUrl, $apiKey, $xml, [], $shopId);
   if (!($r['code'] >= 200 && $r['code'] < 300)) {
     throw new RuntimeException("Falló creación de stock_available (HTTP {$r['code']}).");
   }
@@ -418,16 +435,16 @@ function ps_create_stock_available_with_credentials(int $id_product, int $id_pro
   return $id;
 }
 
-function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string $apiKey): SimpleXMLElement {
-  $r = ps_request_with_credentials('GET', '/api/products/' . $idProduct, $baseUrl, $apiKey);
+function ps_get_product_with_credentials(int $idProduct, string $baseUrl, string $apiKey, int $shopId = 0): SimpleXMLElement {
+  $r = ps_request_with_credentials('GET', '/api/products/' . $idProduct, $baseUrl, $apiKey, null, [], $shopId);
   if ($r['code'] < 200 || $r['code'] >= 300) {
     throw new RuntimeException("No se pudo leer product #{$idProduct} (HTTP {$r['code']}).");
   }
   return ps_xml_load($r['body']);
 }
 
-function ps_get_product_reference_with_credentials(int $idProduct, string $baseUrl, string $apiKey): string {
-  $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+function ps_get_product_reference_with_credentials(int $idProduct, string $baseUrl, string $apiKey, int $shopId = 0): string {
+  $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey, $shopId);
   $productNode = isset($productXml->product) ? $productXml->product : $productXml;
   return trim((string)($productNode->reference ?? ''));
 }
@@ -485,7 +502,7 @@ function ps_get_product_field_canonical(SimpleXMLElement $productNode, string $f
   return trim($canonical);
 }
 
-function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey): array {
+function ps_update_product_active_with_credentials(int $idProduct, int $active, string $baseUrl, string $apiKey, int $shopId = 0): array {
   $normalizedActive = $active > 0 ? '1' : '0';
 
   $protectedFields = ['name', 'description', 'price', 'reference', 'associations'];
@@ -495,7 +512,7 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
 
   while ($attempts < 4) {
     $attempts++;
-    $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+    $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey, $shopId);
     $originalProductNode = isset($productXml->product) ? $productXml->product : $productXml;
     $activeBefore = isset($originalProductNode->active) ? (string)$originalProductNode->active : '';
     $referenceBefore = isset($originalProductNode->reference) ? (string)$originalProductNode->reference : '';
@@ -532,7 +549,8 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       [
         'Content-Type: application/xml',
         'Accept: application/xml',
-      ]
+      ],
+      $shopId
     );
 
     $details = [
@@ -550,7 +568,7 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
     $lastDetails = $details;
 
     if (in_array((int)$putResponse['code'], [200, 201], true)) {
-      $updatedProductXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
+      $updatedProductXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey, $shopId);
       $updatedProductNode = isset($updatedProductXml->product) ? $updatedProductXml->product : $updatedProductXml;
       $afterFields = [
         'name' => ps_get_product_field_canonical($updatedProductNode, 'name'),
@@ -608,14 +626,14 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
   throw new PsRequestException("Falló actualización de product.active para #{$idProduct} luego de múltiples intentos.", $lastDetails);
 }
 
-function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): array {
-  $idStock = ps_find_stock_available_id_with_credentials($idProduct, 0, $baseUrl, $apiKey);
+function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey, int $shopId = 0): array {
+  $idStock = ps_find_stock_available_id_with_credentials($idProduct, 0, $baseUrl, $apiKey, $shopId);
   if (!$idStock) {
-    $idStock = ps_create_stock_available_with_credentials($idProduct, 0, 0, $baseUrl, $apiKey);
+    $idStock = ps_create_stock_available_with_credentials($idProduct, 0, 0, $baseUrl, $apiKey, $shopId);
   }
 
   $normalized = in_array($outOfStock, [0, 1, 2], true) ? $outOfStock : 2;
-  $get = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
+  $get = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, null, [], $shopId);
   if (!in_array((int)$get['code'], [200, 201], true)) {
     throw new RuntimeException("No se pudo leer stock_available #{$idStock} (HTTP {$get['code']}).");
   }
@@ -632,12 +650,12 @@ function ps_update_product_out_of_stock_by_product_with_credentials(int $idProdu
   $put = ps_request_with_credentials('PUT', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, $xml, [
     'Content-Type: application/xml',
     'Accept: application/xml',
-  ]);
+  ], $shopId);
   if (!in_array((int)$put['code'], [200, 201], true)) {
     throw new RuntimeException("Falló actualización out_of_stock para stock_available #{$idStock} (HTTP {$put['code']}).");
   }
 
-  $afterGet = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
+  $afterGet = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey, null, [], $shopId);
   if (!in_array((int)$afterGet['code'], [200, 201], true)) {
     throw new RuntimeException("No se pudo validar stock_available #{$idStock} luego del PUT (HTTP {$afterGet['code']}).");
   }

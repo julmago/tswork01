@@ -30,7 +30,7 @@ if (!$supplier) {
   abort(404, 'Proveedor no encontrado.');
 }
 
-$siteSt = $pdo->prepare("SELECT s.id, s.name, s.conn_type, s.conn_enabled, sc.ps_base_url, sc.ps_api_key
+$siteSt = $pdo->prepare("SELECT s.id, s.name, s.conn_type, s.conn_enabled, sc.ps_base_url, sc.ps_api_key, sc.ps_shop_id
   FROM sites s
   INNER JOIN site_connections sc ON sc.site_id = s.id
   WHERE s.id = ? LIMIT 1");
@@ -42,6 +42,7 @@ if (!$site || strtolower((string)$site['conn_type']) !== 'prestashop' || (int)$s
 
 $psBaseUrl = trim((string)($site['ps_base_url'] ?? ''));
 $psApiKey = trim((string)($site['ps_api_key'] ?? ''));
+$psShopId = max(0, (int)($site['ps_shop_id'] ?? 0));
 
 function ps_bulk_detect_delimiter(string $line): string {
   $counts = [',' => substr_count($line, ','), ';' => substr_count($line, ';'), "\t" => substr_count($line, "\t")];
@@ -290,7 +291,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       $includedProductIds = [];
       $notFoundInRun = [];
 
-      $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges, &$notFoundInRun): string {
+      $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, $psShopId, &$results, $bulkDebugEnabled, $respectSkuManualChanges, &$notFoundInRun): string {
       $productId = (int)$item['product_id'];
       if (isset($notFoundInRun[$productId])) {
         $results[] = [
@@ -298,6 +299,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => '',
+          'shop_id' => (string)$psShopId,
           'active' => $setActive,
           'out_of_stock' => $setOutOfStock,
           'status' => 'NOT_FOUND',
@@ -349,6 +351,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => '',
+          'shop_id' => (string)$psShopId,
           'active' => $setActive,
           'out_of_stock' => $setOutOfStock,
           'status' => 'NOT_FOUND',
@@ -365,13 +368,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       $relinkMessage = '';
       if ($respectSkuManualChanges) {
         try {
-          $referenceActual = ps_get_product_reference_with_credentials((int)$remoteProductId, $psBaseUrl, $psApiKey);
+          $referenceActual = ps_get_product_reference_with_credentials((int)$remoteProductId, $psBaseUrl, $psApiKey, $psShopId);
         } catch (Throwable $t) {
           $results[] = [
             'scope' => $scopeLabel,
             'supplier_sku' => $item['supplier_sku'],
             'sku' => $item['sku'],
             'ps_product_id' => (string)$remoteProductId,
+            'shop_id' => (string)$psShopId,
             'active' => $setActive,
             'out_of_stock' => $setOutOfStock,
             'status' => 'ERROR',
@@ -429,14 +433,15 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
 
       try {
-        $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $setActive, $psBaseUrl, $psApiKey);
-        $stockUpdateDebug = ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey);
+        $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $setActive, $psBaseUrl, $psApiKey, $psShopId);
+        $stockUpdateDebug = ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey, $psShopId);
 
         $resultRow = [
           'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => (string)$remoteProductId,
+          'shop_id' => (string)$psShopId,
           'active' => $setActive,
           'out_of_stock' => $setOutOfStock,
           'status' => 'OK',
@@ -466,6 +471,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'supplier_sku' => $item['supplier_sku'],
           'sku' => $item['sku'],
           'ps_product_id' => (string)$remoteProductId,
+          'shop_id' => (string)$psShopId,
           'active' => $setActive,
           'out_of_stock' => $setOutOfStock,
           'status' => 'ERROR',
@@ -776,6 +782,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>SKU TSWork</th>
                 <th>Origen</th>
                 <th>PS product id</th>
+                <th>shop_id</th>
                 <th>id_stock_available</th>
                 <th>active set</th>
                 <th>out_of_stock set</th>
@@ -803,6 +810,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= e($row['sku']) ?></td>
                 <td><?= e((string)($row['scope'] ?? 'incluido CSV')) ?></td>
                 <td><?= e((string)$row['ps_product_id']) ?></td>
+                <td><?= e((string)($row['shop_id'] ?? '')) ?></td>
                 <td><?= e((string)($row['id_stock_available'] ?? '')) ?></td>
                 <td><?= (int)$row['active'] ?></td>
                 <td><?= (int)$row['out_of_stock'] ?></td>
