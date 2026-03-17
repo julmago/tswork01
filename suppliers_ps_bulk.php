@@ -467,27 +467,29 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           $nonListedCountSt->execute(array_merge([$supplierId], $includedProductIds));
           $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
 
-          $nonListedSt = $pdo->prepare("SELECT p.id, p.sku, p.name, ps.supplier_sku
+          $nonListedSql = "SELECT p.id, p.sku, p.name, ps.supplier_sku
             FROM product_suppliers ps
             INNER JOIN products p ON p.id = ps.product_id
             WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})
             GROUP BY p.id, p.sku, p.name, ps.supplier_sku
             ORDER BY p.id ASC
-            LIMIT ? OFFSET ?");
-          $nonListedSt->execute(array_merge([$supplierId], $includedProductIds, [$nonListedBatchLimit, $nonListedOffset]));
+            LIMIT {$limit} OFFSET {$offset}";
+          $nonListedSt = $pdo->prepare($nonListedSql);
+          $nonListedSt->execute(array_merge([$supplierId], $includedProductIds));
         } else {
           $nonListedCountSt = $pdo->prepare('SELECT COUNT(DISTINCT ps.product_id) FROM product_suppliers ps WHERE ps.supplier_id = ?');
           $nonListedCountSt->execute([$supplierId]);
           $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
 
-          $nonListedSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
+          $nonListedSql = "SELECT p.id, p.sku, p.name, ps.supplier_sku
             FROM product_suppliers ps
             INNER JOIN products p ON p.id = ps.product_id
             WHERE ps.supplier_id = ?
             GROUP BY p.id, p.sku, p.name, ps.supplier_sku
             ORDER BY p.id ASC
-            LIMIT ? OFFSET ?');
-          $nonListedSt->execute([$supplierId, $nonListedBatchLimit, $nonListedOffset]);
+            LIMIT {$limit} OFFSET {$offset}";
+          $nonListedSt = $pdo->prepare($nonListedSql);
+          $nonListedSt->execute([$supplierId]);
         }
 
         $nonListedBatchItems = [];
@@ -527,18 +529,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         $applyError = 'No hay productos seleccionados para aplicar.';
       }
     } catch (Throwable $e) {
-      error_log('suppliers_ps_bulk APPLY ERROR: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
-      $last = error_get_last();
-      if ($last) {
-        error_log('LAST_ERROR: ' . print_r($last, true));
+      error_log("PS_BULK APPLY ERROR: " . $e->getMessage() . " " . $e->getFile() . ":" . $e->getLine() . "\n" . $e->getTraceAsString());
+      if ((int)($_GET['debug'] ?? 0) === 1) {
+        die("<pre>" . $e->getMessage() . "\n" . $e->getFile() . ":" . $e->getLine() . "\n\n" . $e->getTraceAsString() . "</pre>");
       }
-
-      if ($debugMode) {
-        $fatalError = $e->getMessage() . ' | ' . basename($e->getFile()) . ':' . $e->getLine();
-        $fatalErrorTrace = $e->getTraceAsString();
-      } else {
-        $fatalError = 'Ocurrió un error interno.';
-      }
+      $applyError = 'Ocurrió un error interno.';
     }
   }
 }
