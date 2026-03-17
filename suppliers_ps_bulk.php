@@ -181,6 +181,8 @@ if (count($foundProductIds) > 0) {
 $results = [];
 $applyError = '';
 $applySuccess = '';
+$fatalError = '';
+$fatalErrorTrace = '';
 $includedOkCount = 0;
 $includedTotalCount = 0;
 $nonListedOkCount = 0;
@@ -198,8 +200,8 @@ $formRespectSkuManualChanges = post('respect_sku_manual_changes', '1') === '1';
 $formApplyToNonListed = post('apply_to_non_listed', '0') === '1';
 $formNonListedActiveMode = post('non_listed_active_mode', 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
 $formNonListedOutOfStockMode = post('non_listed_outofstock_mode', 'default');
-$formNonListedBatchLimit = max(1, min(500, (int)post('non_listed_batch_limit', '50')));
-$formNonListedOffset = max(0, (int)post('non_listed_offset', '0'));
+$formNonListedBatchLimit = max(1, min(200, (int)($_POST['non_listed_batch_limit'] ?? 50)));
+$formNonListedOffset = max(0, (int)($_POST['non_listed_offset'] ?? 0));
 
 if (is_post() && post('action') === 'ps_bulk_apply') {
   if (!can_suppliers_ps_bulk()) {
@@ -209,41 +211,51 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
   if ($psBaseUrl === '' || $psApiKey === '') {
     $applyError = 'El sitio no tiene URL/API Key de PrestaShop configurados.';
   } else {
-    $offlineMode = $formOfflineMode;
-    $activeValue = $offlineMode === 'offline' ? 0 : 1;
+    try {
+      $siteId = (int)($_SESSION['ps_bulk_site_id'] ?? 0);
+      $supplierId = (int)($_SESSION['ps_bulk_supplier_id'] ?? 0);
+      $csvPath = $_SESSION['ps_bulk_csv_path'] ?? '';
+      if ($siteId <= 0 || $supplierId <= 0 || $csvPath === '' || !is_file((string)$csvPath)) {
+        throw new Exception('Sesión inválida: faltan datos del bulk.');
+      }
 
-    $stockMode = $formOutOfStockMode;
-    $outOfStockValue = 2;
-    if ($stockMode === 'deny') {
-      $outOfStockValue = 0;
-    } elseif ($stockMode === 'allow') {
-      $outOfStockValue = 1;
-    }
+      $offlineMode = $formOfflineMode;
+      $activeValue = $offlineMode === 'offline' ? 0 : 1;
 
-    $selected = $_POST['include'] ?? [];
-    if (!is_array($selected)) {
-      $selected = [];
-    }
+      $stockMode = $formOutOfStockMode;
+      $outOfStockValue = 2;
+      if ($stockMode === 'deny') {
+        $outOfStockValue = 0;
+      } elseif ($stockMode === 'allow') {
+        $outOfStockValue = 1;
+      }
 
-    $applyToNonListed = $formApplyToNonListed;
-    $respectSkuManualChanges = $formRespectSkuManualChanges;
-    $nonListedOfflineMode = $formNonListedActiveMode;
-    $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
-    $nonListedStockMode = $formNonListedOutOfStockMode;
-    $nonListedOutOfStockValue = 2;
-    if ($nonListedStockMode === 'deny') {
-      $nonListedOutOfStockValue = 0;
-    } elseif ($nonListedStockMode === 'allow') {
-      $nonListedOutOfStockValue = 1;
-    }
+      $selected = $_POST['include'] ?? [];
+      if (!is_array($selected)) {
+        $selected = [];
+      }
 
-    $nonListedBatchLimit = $formNonListedBatchLimit;
-    $nonListedOffset = $formNonListedOffset;
+      $applyToNonListed = $formApplyToNonListed;
+      $respectSkuManualChanges = $formRespectSkuManualChanges;
+      $nonListedOfflineMode = $formNonListedActiveMode;
+      $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
+      $nonListedStockMode = $formNonListedOutOfStockMode;
+      $nonListedOutOfStockValue = 2;
+      if ($nonListedStockMode === 'deny') {
+        $nonListedOutOfStockValue = 0;
+      } elseif ($nonListedStockMode === 'allow') {
+        $nonListedOutOfStockValue = 1;
+      }
 
-    $includedProductIds = [];
-    $notFoundInRun = [];
+      $limit = max(1, min(200, (int)($_POST['non_listed_batch_limit'] ?? 50)));
+      $offset = max(0, (int)($_POST['non_listed_offset'] ?? 0));
+      $nonListedBatchLimit = $limit;
+      $nonListedOffset = $offset;
 
-    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges, &$notFoundInRun): string {
+      $includedProductIds = [];
+      $notFoundInRun = [];
+
+      $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges, &$notFoundInRun): string {
       $productId = (int)$item['product_id'];
       if (isset($notFoundInRun[$productId])) {
         $results[] = [
@@ -428,90 +440,106 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         ];
         return 'ERROR';
       }
-    };
+      };
 
-    foreach ($found as $item) {
-      $productId = (int)$item['product_id'];
-      if (!isset($selected[$productId])) {
-        continue;
-      }
+      foreach ($found as $item) {
+        $productId = (int)$item['product_id'];
+        if (!isset($selected[$productId])) {
+          continue;
+        }
 
-      $includedProductIds[] = $productId;
-      $includedTotalCount++;
-      $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
-      if ($status === 'OK') {
-        $includedOkCount++;
-      }
-    }
-
-    if ($applyToNonListed) {
-      $nonListedTotalAvailable = 0;
-      if (count($includedProductIds) > 0) {
-        $placeholders = implode(',', array_fill(0, count($includedProductIds), '?'));
-        $nonListedCountSt = $pdo->prepare("SELECT COUNT(DISTINCT ps.product_id)
-          FROM product_suppliers ps
-          WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})");
-        $nonListedCountSt->execute(array_merge([$supplierId], $includedProductIds));
-        $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
-
-        $nonListedSt = $pdo->prepare("SELECT p.id, p.sku, p.name, ps.supplier_sku
-          FROM product_suppliers ps
-          INNER JOIN products p ON p.id = ps.product_id
-          WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})
-          GROUP BY p.id, p.sku, p.name, ps.supplier_sku
-          ORDER BY p.id ASC
-          LIMIT ? OFFSET ?");
-        $nonListedSt->execute(array_merge([$supplierId], $includedProductIds, [$nonListedBatchLimit, $nonListedOffset]));
-      } else {
-        $nonListedCountSt = $pdo->prepare('SELECT COUNT(DISTINCT ps.product_id) FROM product_suppliers ps WHERE ps.supplier_id = ?');
-        $nonListedCountSt->execute([$supplierId]);
-        $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
-
-        $nonListedSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
-          FROM product_suppliers ps
-          INNER JOIN products p ON p.id = ps.product_id
-          WHERE ps.supplier_id = ?
-          GROUP BY p.id, p.sku, p.name, ps.supplier_sku
-          ORDER BY p.id ASC
-          LIMIT ? OFFSET ?');
-        $nonListedSt->execute([$supplierId, $nonListedBatchLimit, $nonListedOffset]);
-      }
-
-      $nonListedBatchItems = [];
-      while ($row = $nonListedSt->fetch()) {
-        $nonListedBatchItems[] = [
-          'product_id' => (int)$row['id'],
-          'supplier_sku' => (string)$row['supplier_sku'],
-          'sku' => (string)$row['sku'],
-          'name' => (string)$row['name'],
-        ];
-      }
-
-      $nonListedTotalCount = $nonListedTotalAvailable;
-      $nonListedBatchProcessed = count($nonListedBatchItems);
-      foreach ($nonListedBatchItems as $item) {
-        $status = $applyProductChanges($item, $nonListedActiveValue, $nonListedOutOfStockValue, 'no incluido');
+        $includedProductIds[] = $productId;
+        $includedTotalCount++;
+        $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
         if ($status === 'OK') {
-          $nonListedOkCount++;
-        } elseif ($status === 'SKIPPED') {
-          $nonListedSkippedCount++;
-        } elseif ($status === 'NOT_FOUND') {
-          $nonListedNotFoundCount++;
-        } else {
-          $nonListedErrorCount++;
+          $includedOkCount++;
         }
       }
 
-      $nextNonListedOffset = $nonListedOffset + $nonListedBatchProcessed;
-      $nonListedPendingCount = max(0, $nonListedTotalAvailable - $nextNonListedOffset);
-    }
+      if ($applyToNonListed) {
+        $nonListedTotalAvailable = 0;
+        if (count($includedProductIds) > 0) {
+          $placeholders = implode(',', array_fill(0, count($includedProductIds), '?'));
+          $nonListedCountSt = $pdo->prepare("SELECT COUNT(DISTINCT ps.product_id)
+            FROM product_suppliers ps
+            WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})");
+          $nonListedCountSt->execute(array_merge([$supplierId], $includedProductIds));
+          $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
 
-    if ($includedTotalCount > 0 || $nonListedTotalCount > 0) {
-      $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}."
-        . " No incluidos procesados en lote: {$nonListedBatchProcessed} (OK {$nonListedOkCount}, SKIPPED {$nonListedSkippedCount}, NOT_FOUND {$nonListedNotFoundCount}, ERROR {$nonListedErrorCount})."
-        . " Pendientes no incluidos: {$nonListedPendingCount}.";
-    } else {
-      $applyError = 'No hay productos seleccionados para aplicar.';
+          $nonListedSt = $pdo->prepare("SELECT p.id, p.sku, p.name, ps.supplier_sku
+            FROM product_suppliers ps
+            INNER JOIN products p ON p.id = ps.product_id
+            WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})
+            GROUP BY p.id, p.sku, p.name, ps.supplier_sku
+            ORDER BY p.id ASC
+            LIMIT ? OFFSET ?");
+          $nonListedSt->execute(array_merge([$supplierId], $includedProductIds, [$nonListedBatchLimit, $nonListedOffset]));
+        } else {
+          $nonListedCountSt = $pdo->prepare('SELECT COUNT(DISTINCT ps.product_id) FROM product_suppliers ps WHERE ps.supplier_id = ?');
+          $nonListedCountSt->execute([$supplierId]);
+          $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
+
+          $nonListedSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
+            FROM product_suppliers ps
+            INNER JOIN products p ON p.id = ps.product_id
+            WHERE ps.supplier_id = ?
+            GROUP BY p.id, p.sku, p.name, ps.supplier_sku
+            ORDER BY p.id ASC
+            LIMIT ? OFFSET ?');
+          $nonListedSt->execute([$supplierId, $nonListedBatchLimit, $nonListedOffset]);
+        }
+
+        $nonListedBatchItems = [];
+        while ($row = $nonListedSt->fetch()) {
+          $nonListedBatchItems[] = [
+            'product_id' => (int)$row['id'],
+            'supplier_sku' => (string)$row['supplier_sku'],
+            'sku' => (string)$row['sku'],
+            'name' => (string)$row['name'],
+          ];
+        }
+
+        $nonListedTotalCount = $nonListedTotalAvailable;
+        $nonListedBatchProcessed = count($nonListedBatchItems);
+        foreach ($nonListedBatchItems as $item) {
+          $status = $applyProductChanges($item, $nonListedActiveValue, $nonListedOutOfStockValue, 'no incluido');
+          if ($status === 'OK') {
+            $nonListedOkCount++;
+          } elseif ($status === 'SKIPPED') {
+            $nonListedSkippedCount++;
+          } elseif ($status === 'NOT_FOUND') {
+            $nonListedNotFoundCount++;
+          } else {
+            $nonListedErrorCount++;
+          }
+        }
+
+        $nextNonListedOffset = $nonListedOffset + $nonListedBatchProcessed;
+        $nonListedPendingCount = max(0, $nonListedTotalAvailable - $nextNonListedOffset);
+      }
+
+      if ($includedTotalCount > 0 || $nonListedTotalCount > 0) {
+        $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}."
+          . " No incluidos procesados en lote: {$nonListedBatchProcessed} (OK {$nonListedOkCount}, SKIPPED {$nonListedSkippedCount}, NOT_FOUND {$nonListedNotFoundCount}, ERROR {$nonListedErrorCount})."
+          . " Pendientes no incluidos: {$nonListedPendingCount}.";
+      } else {
+        $applyError = 'No hay productos seleccionados para aplicar.';
+      }
+    } catch (Throwable $e) {
+      $pdoError = '';
+      if ($e instanceof PDOException) {
+        $sqlState = (string)($e->errorInfo[0] ?? $e->getCode() ?? '');
+        $pdoError = $sqlState !== '' ? "\nSQLSTATE: {$sqlState}" : '';
+      }
+      error_log('suppliers_ps_bulk APPLY ERROR: ' . $e->getMessage() . $pdoError . "\n" . $e->getTraceAsString());
+
+      if (defined('DEBUG') && DEBUG) {
+        http_response_code(500);
+        die('<pre>APPLY ERROR:\n' . $e->getMessage() . $pdoError . "\n\n" . $e->getTraceAsString() . '</pre>');
+      }
+
+      $fatalError = 'Ocurrió un error interno.';
+      $fatalErrorTrace = $e->getMessage() . $pdoError . "\n\n" . $e->getTraceAsString();
     }
   }
 }
@@ -538,6 +566,8 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     </div>
 
     <?php if ($applyError !== ''): ?><div class="alert alert-danger"><?= e($applyError) ?></div><?php endif; ?>
+    <?php if ($fatalError !== ''): ?><div class="alert alert-danger"><?= e($fatalError) ?></div><?php endif; ?>
+    <?php if ($fatalErrorTrace !== '' && defined('DEBUG') && DEBUG): ?><pre><?= e($fatalErrorTrace) ?></pre><?php endif; ?>
     <?php if ($applySuccess !== ''): ?><div class="alert alert-success"><?= e($applySuccess) ?></div><?php endif; ?>
 
     <?php if ($formApplyToNonListed && is_post() && post('action') === 'ps_bulk_apply'): ?>
