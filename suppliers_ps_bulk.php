@@ -628,14 +628,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     .dv-results-table tbody tr td { padding:12px 14px; }
     .dv-results-table tbody tr:hover { box-shadow: 0 0 0 1px rgba(255,0,0,.25), 0 10px 30px rgba(0,0,0,.35); transform: translateY(-1px); cursor:pointer; }
     .dv-results-table .dv-col-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; opacity:.95; }
-    .dv-results-table .dv-col-ps-id { text-align:right; white-space:nowrap; }
+    .dv-results-table .dv-psid { text-align:left !important; justify-content:flex-start !important; }
+    .dv-results-table .dv-col-ps-id { text-align:left; white-space:nowrap; }
     .dv-badge { display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:.82rem; font-weight:600; letter-spacing:.01em; }
     .dv-ok { background: rgba(34,197,94,.16); color:#86efac; border:1px solid rgba(34,197,94,.28); }
     .dv-skip { background: rgba(148,163,184,.16); color:#cbd5e1; border:1px solid rgba(148,163,184,.3); }
     .dv-warn { background: rgba(250,204,21,.16); color:#fde68a; border:1px solid rgba(250,204,21,.3); }
     .dv-err { background: rgba(239,68,68,.16); color:#fca5a5; border:1px solid rgba(239,68,68,.35); }
     .dv-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; border:1px solid rgba(255,255,255,.16); padding:4px 10px; background:rgba(255,255,255,.06); color:rgba(255,255,255,.92); font-size:.82rem; line-height:1.2; }
-    .dv-ext-link-icon { margin-left:6px; opacity:.9; font-size:.85em; }
   </style>
 </head>
 <body class="<?= e(app_body_class()) ?>">
@@ -796,7 +796,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               <tr>
                 <th>SKU proveedor</th>
                 <th>SKU TSWork</th>
-                <th>PS ID</th>
+                <th class="dv-psid">PS ID</th>
                 <th>Acción</th>
                 <th>Resultado</th>
                 <th>Relink</th>
@@ -836,10 +836,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               <tr class="dv-row-link" data-url="<?= e($requestUrl) ?>">
                 <td class="dv-col-mono"><?= e($row['supplier_sku']) ?></td>
                 <td class="dv-col-mono"><?= e($row['sku']) ?></td>
-                <td class="dv-col-ps-id">
-                  <?= e((string)$row['ps_product_id']) ?>
-                  <span class="dv-ext-link-icon" title="Abrir en PrestaShop API" aria-hidden="true">↗</span>
-                </td>
+                <td class="dv-col-ps-id dv-psid"><?= (int)$row['ps_product_id'] ?></td>
                 <td><span class="dv-chip"><?= e($actionLabel) ?></span></td>
                 <td><span class="dv-badge <?= e($statusClass) ?>"><?= e($statusValue) ?></span></td>
                 <td><span class="dv-chip"><?= e($relinkValue) ?></span></td>
