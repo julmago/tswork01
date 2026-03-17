@@ -780,55 +780,69 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               <tr>
                 <th>SKU proveedor</th>
                 <th>SKU TSWork</th>
-                <th>Origen</th>
-                <th>PS product id</th>
-                <th>shop_id</th>
-                <th>id_stock_available</th>
-                <th>active set</th>
-                <th>out_of_stock set</th>
-                <th>active_before</th>
-                <th>active_after</th>
-                <th>out_of_stock_before</th>
-                <th>out_of_stock_after</th>
-                <th>reference_after</th>
-                <th>Estado</th>
+                <th>PS ID</th>
+                <th>Acción</th>
+                <th>Resultado</th>
                 <th>Relink</th>
-                <th>Error</th>
-                <th>Request URL</th>
-                <th>Método</th>
-                <th>HTTP</th>
-                <?php if ($bulkDebugEnabled): ?>
-                  <th>reference_before</th>
-                <?php endif; ?>
-                <th>Response XML (recortado)</th>
+                <th>Ver</th>
+                <th>Detalle</th>
               </tr>
             </thead>
             <tbody>
               <?php foreach ($results as $row): ?>
+              <?php
+                $activeBefore = (string)($row['active_before'] ?? '');
+                $activeAfter = (string)($row['active_after'] ?? '');
+                $outOfStockBefore = (string)($row['out_of_stock_before'] ?? '');
+                $outOfStockAfter = (string)($row['out_of_stock_after'] ?? '');
+                $changedActive = $activeBefore != $activeAfter;
+                $changedOOS = $outOfStockBefore != $outOfStockAfter;
+                if ($changedActive && $changedOOS) {
+                  $actionLabel = 'Ambos';
+                } elseif ($changedActive) {
+                  $actionLabel = 'Active';
+                } elseif ($changedOOS) {
+                  $actionLabel = 'Stock';
+                } else {
+                  $actionLabel = 'Sin cambios';
+                }
+                $relinkRaw = trim((string)($row['relink'] ?? ''));
+                $relinkValue = $relinkRaw !== '' ? $relinkRaw : '—';
+                $requestUrl = trim((string)($row['request_url'] ?? ''));
+                $isError = strtoupper((string)($row['status'] ?? '')) === 'ERROR';
+              ?>
               <tr>
                 <td><?= e($row['supplier_sku']) ?></td>
                 <td><?= e($row['sku']) ?></td>
-                <td><?= e((string)($row['scope'] ?? 'incluido CSV')) ?></td>
                 <td><?= e((string)$row['ps_product_id']) ?></td>
-                <td><?= e((string)($row['shop_id'] ?? '')) ?></td>
-                <td><?= e((string)($row['id_stock_available'] ?? '')) ?></td>
-                <td><?= (int)$row['active'] ?></td>
-                <td><?= (int)$row['out_of_stock'] ?></td>
-                <td><?= e((string)($row['active_before'] ?? '')) ?></td>
-                <td><?= e((string)($row['active_after'] ?? '')) ?></td>
-                <td><?= e((string)($row['out_of_stock_before'] ?? '')) ?></td>
-                <td><?= e((string)($row['out_of_stock_after'] ?? '')) ?></td>
-                <td><?= e((string)($row['reference_after'] ?? '')) ?></td>
-                <td><?= e($row['status']) ?></td>
-                <td><?= e((string)($row['relink'] ?? '')) ?></td>
-                <td><?= e($row['error']) ?></td>
-                <td><?= e((string)($row['request_url'] ?? '')) ?></td>
-                <td><?= e((string)($row['request_method'] ?? '')) ?></td>
-                <td><?= e((string)($row['status_code'] ?? '')) ?></td>
-                <?php if ($bulkDebugEnabled): ?>
-                  <td><?= e((string)($row['reference_before'] ?? '')) ?></td>
-                <?php endif; ?>
-                <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre></td>
+                <td><?= e($actionLabel) ?></td>
+                <td><?= e((string)($row['status'] ?? '')) ?></td>
+                <td><?= e($relinkValue) ?></td>
+                <td>
+                  <?php if ($requestUrl !== ''): ?>
+                    <a href="<?= e($requestUrl) ?>" target="_blank" rel="noopener noreferrer">Ver</a>
+                  <?php else: ?>
+                    —
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <details>
+                    <summary>Detalle</summary>
+                    <div class="muted" style="margin-top:var(--space-2);padding:var(--space-2);border:1px solid var(--border-color);border-radius:8px;overflow-x:auto;max-width:520px;">
+                      <div><strong>id_stock_available:</strong> <?= e((string)($row['id_stock_available'] ?? '')) ?></div>
+                      <div><strong>active_before/after:</strong> <?= e($activeBefore) ?> → <?= e($activeAfter) ?></div>
+                      <div><strong>out_of_stock_before/after:</strong> <?= e($outOfStockBefore) ?> → <?= e($outOfStockAfter) ?></div>
+                      <div><strong>reference_after:</strong> <?= e((string)($row['reference_after'] ?? '')) ?></div>
+                      <?php if ((int)($row['shop_id'] ?? 0) > 0): ?>
+                        <div><strong>shop_id:</strong> <?= (int)$row['shop_id'] ?></div>
+                      <?php endif; ?>
+                      <?php if ($isError): ?>
+                        <div style="margin-top:var(--space-2)"><strong>Response XML (recortado):</strong></div>
+                        <pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre>
+                      <?php endif; ?>
+                    </div>
+                  </details>
+                </td>
               </tr>
               <?php endforeach; ?>
             </tbody>
