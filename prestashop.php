@@ -497,6 +497,7 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
     $attempts++;
     $productXml = ps_get_product_with_credentials($idProduct, $baseUrl, $apiKey);
     $originalProductNode = isset($productXml->product) ? $productXml->product : $productXml;
+    $activeBefore = isset($originalProductNode->active) ? (string)$originalProductNode->active : '';
     $referenceBefore = isset($originalProductNode->reference) ? (string)$originalProductNode->reference : '';
     $beforeFields = [
       'name' => ps_get_product_field_canonical($originalProductNode, 'name'),
@@ -540,12 +541,11 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       'status_code' => (int)$putResponse['code'],
       'request_payload_xml' => ps_truncate_text($payloadXml),
       'response_body_xml' => ps_truncate_text((string)($putResponse['body'] ?? '')),
+      'active_before' => $activeBefore,
+      'active_after' => '',
+      'reference_before' => $referenceBefore,
+      'reference_after' => '',
     ];
-
-    if (defined('DEBUG') && DEBUG) {
-      $details['reference_before'] = $referenceBefore;
-      $details['reference_after'] = isset($originalProductNode->reference) ? (string)$originalProductNode->reference : '';
-    }
 
     $lastDetails = $details;
 
@@ -570,6 +570,9 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
       if (defined('DEBUG') && DEBUG) {
         $details['reference_after'] = isset($updatedProductNode->reference) ? (string)$updatedProductNode->reference : '';
       }
+
+      $details['active_after'] = isset($updatedProductNode->active) ? (string)$updatedProductNode->active : '';
+      $details['reference_after'] = isset($updatedProductNode->reference) ? (string)$updatedProductNode->reference : '';
 
       return $details;
     }
@@ -605,7 +608,7 @@ function ps_update_product_active_with_credentials(int $idProduct, int $active, 
   throw new PsRequestException("Falló actualización de product.active para #{$idProduct} luego de múltiples intentos.", $lastDetails);
 }
 
-function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): void {
+function ps_update_product_out_of_stock_by_product_with_credentials(int $idProduct, int $outOfStock, string $baseUrl, string $apiKey): array {
   $idStock = ps_find_stock_available_id_with_credentials($idProduct, 0, $baseUrl, $apiKey);
   if (!$idStock) {
     $idStock = ps_create_stock_available_with_credentials($idProduct, 0, 0, $baseUrl, $apiKey);
@@ -619,6 +622,7 @@ function ps_update_product_out_of_stock_by_product_with_credentials(int $idProdu
 
   $stockXml = ps_xml_load((string)$get['body']);
   $stockNode = isset($stockXml->stock_available) ? $stockXml->stock_available : $stockXml;
+  $outOfStockBefore = isset($stockNode->out_of_stock) ? (string)$stockNode->out_of_stock : '';
   $stockNode->out_of_stock = (string)$normalized;
   $xml = $stockXml->asXML();
   if ($xml === false) {
@@ -632,4 +636,18 @@ function ps_update_product_out_of_stock_by_product_with_credentials(int $idProdu
   if (!in_array((int)$put['code'], [200, 201], true)) {
     throw new RuntimeException("Falló actualización out_of_stock para stock_available #{$idStock} (HTTP {$put['code']}).");
   }
+
+  $afterGet = ps_request_with_credentials('GET', '/api/stock_availables/' . $idStock, $baseUrl, $apiKey);
+  if (!in_array((int)$afterGet['code'], [200, 201], true)) {
+    throw new RuntimeException("No se pudo validar stock_available #{$idStock} luego del PUT (HTTP {$afterGet['code']}).");
+  }
+  $afterStockXml = ps_xml_load((string)$afterGet['body']);
+  $afterStockNode = isset($afterStockXml->stock_available) ? $afterStockXml->stock_available : $afterStockXml;
+  $outOfStockAfter = isset($afterStockNode->out_of_stock) ? (string)$afterStockNode->out_of_stock : '';
+
+  return [
+    'id_stock_available' => (string)$idStock,
+    'out_of_stock_before' => $outOfStockBefore,
+    'out_of_stock_after' => $outOfStockAfter,
+  ];
 }
