@@ -140,33 +140,49 @@ if (count($csvSkus) === 0) {
   abort(400, 'El CSV no contiene SKUs válidos en la primera columna.');
 }
 
-$matchSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
+$matchSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku, ps.is_active
   FROM product_suppliers ps
   INNER JOIN products p ON p.id = ps.product_id
   WHERE ps.supplier_id = ? AND ps.supplier_sku = ?
-  LIMIT 1');
+  ORDER BY ps.is_active DESC, p.id ASC');
 
 $found = [];
+$foundRowKeys = [];
 $notFound = [];
+$csvUniqueSupplierSkus = array_values(array_unique($csvSkus));
+$matchedProductIds = [];
 foreach ($csvSkus as $skuProv) {
   $matchSt->execute([$supplierId, $skuProv]);
-  $row = $matchSt->fetch();
-  if ($row) {
-    $productId = (int)$row['id'];
-    if (!isset($found[$productId])) {
-      $found[$productId] = [
+  $rows = $matchSt->fetchAll();
+  if ($rows && count($rows) > 0) {
+    foreach ($rows as $row) {
+      $productId = (int)$row['id'];
+      $rowKey = $skuProv . '::' . $productId;
+      if (isset($foundRowKeys[$rowKey])) {
+        continue;
+      }
+
+      $found[] = [
+        'include_key' => $rowKey,
         'product_id' => $productId,
         'supplier_sku' => (string)$row['supplier_sku'],
         'sku' => (string)$row['sku'],
         'name' => (string)$row['name'],
+        'supplier_active' => (int)$row['is_active'] === 1,
       ];
+
+      $foundRowKeys[$rowKey] = true;
+      $matchedProductIds[$productId] = true;
     }
   } else {
     $notFound[] = $skuProv;
   }
 }
 
-$foundProductIds = array_map(static fn(array $item): int => (int)$item['product_id'], array_values($found));
+$foundProductIds = array_map(static fn($productId): int => (int)$productId, array_keys($matchedProductIds));
+$matchedRowsCount = count($found);
+$matchedProductsCount = count($matchedProductIds);
+$uniqueSupplierSkusCount = count($csvUniqueSupplierSkus);
 $nonListedDetectedCount = 0;
 if (count($foundProductIds) > 0) {
   $placeholders = implode(',', array_fill(0, count($foundProductIds), '?'));
@@ -463,18 +479,20 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
       if ($processIncludedCsv) {
         foreach ($found as $item) {
+          $includeKey = (string)($item['include_key'] ?? '');
           $productId = (int)$item['product_id'];
-          if (!isset($selected[$productId])) {
+          if ($includeKey === '' || !isset($selected[$includeKey])) {
             continue;
           }
 
-          $includedProductIds[] = $productId;
+          $includedProductIds[$productId] = true;
           $includedTotalCount++;
           $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
           if ($status === 'OK') {
             $includedOkCount++;
           }
         }
+        $includedProductIds = array_map(static fn($productId): int => (int)$productId, array_keys($includedProductIds));
       } else {
         $includedProductIds = $foundProductIds;
       }
@@ -623,7 +641,9 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     <div class="card stack">
       <h3 style="margin:0">Resumen CSV</h3>
-      <div>Encontrados: <strong><?= count($found) ?></strong></div>
+      <div>Encontrados (filas/productos): <strong><?= (int)$matchedRowsCount ?></strong></div>
+      <div>SKUs proveedor únicos: <strong><?= (int)$uniqueSupplierSkusCount ?></strong></div>
+      <div>Productos matcheados únicos: <strong><?= (int)$matchedProductsCount ?></strong></div>
       <div>No encontrados: <strong><?= count($notFound) ?></strong></div>
       <?php if (count($notFound) > 0): ?>
         <details>
@@ -703,15 +723,23 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>SKU proveedor</th>
                 <th>SKU TSWork</th>
                 <th>Nombre</th>
+                <th>Activo proveedor</th>
               </tr>
             </thead>
             <tbody>
             <?php foreach ($found as $item): ?>
               <tr>
-                <td><input type="checkbox" name="include[<?= (int)$item['product_id'] ?>]" value="1" checked></td>
+                <td><input type="checkbox" name="include[<?= e((string)$item['include_key']) ?>]" value="1" checked></td>
                 <td><?= e($item['supplier_sku']) ?></td>
                 <td><?= e($item['sku']) ?></td>
                 <td><?= e($item['name']) ?></td>
+                <td>
+                  <?php if (!empty($item['supplier_active'])): ?>
+                    <span class="badge badge-success">Activo</span>
+                  <?php else: ?>
+                    <span class="badge">Inactivo</span>
+                  <?php endif; ?>
+                </td>
               </tr>
             <?php endforeach; ?>
             </tbody>
