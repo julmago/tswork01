@@ -185,6 +185,21 @@ $includedOkCount = 0;
 $includedTotalCount = 0;
 $nonListedOkCount = 0;
 $nonListedTotalCount = 0;
+$nonListedSkippedCount = 0;
+$nonListedNotFoundCount = 0;
+$nonListedErrorCount = 0;
+$nonListedBatchProcessed = 0;
+$nonListedPendingCount = 0;
+$nextNonListedOffset = 0;
+
+$formOfflineMode = post('offline_mode', 'online') === 'offline' ? 'offline' : 'online';
+$formOutOfStockMode = post('out_of_stock_mode', 'default');
+$formRespectSkuManualChanges = post('respect_sku_manual_changes', '1') === '1';
+$formApplyToNonListed = post('apply_to_non_listed', '0') === '1';
+$formNonListedActiveMode = post('non_listed_active_mode', 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
+$formNonListedOutOfStockMode = post('non_listed_outofstock_mode', 'default');
+$formNonListedBatchLimit = max(1, min(500, (int)post('non_listed_batch_limit', '50')));
+$formNonListedOffset = max(0, (int)post('non_listed_offset', '0'));
 
 if (is_post() && post('action') === 'ps_bulk_apply') {
   if (!can_suppliers_ps_bulk()) {
@@ -194,10 +209,10 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
   if ($psBaseUrl === '' || $psApiKey === '') {
     $applyError = 'El sitio no tiene URL/API Key de PrestaShop configurados.';
   } else {
-    $offlineMode = post('offline_mode', 'online') === 'offline' ? 'offline' : 'online';
+    $offlineMode = $formOfflineMode;
     $activeValue = $offlineMode === 'offline' ? 0 : 1;
 
-    $stockMode = post('out_of_stock_mode', 'default');
+    $stockMode = $formOutOfStockMode;
     $outOfStockValue = 2;
     if ($stockMode === 'deny') {
       $outOfStockValue = 0;
@@ -210,11 +225,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       $selected = [];
     }
 
-    $applyToNonListed = post('apply_to_non_listed', '0') === '1';
-    $respectSkuManualChanges = post('respect_sku_manual_changes', '1') === '1';
-    $nonListedOfflineMode = post('non_listed_active_mode', 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
+    $applyToNonListed = $formApplyToNonListed;
+    $respectSkuManualChanges = $formRespectSkuManualChanges;
+    $nonListedOfflineMode = $formNonListedActiveMode;
     $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
-    $nonListedStockMode = post('non_listed_outofstock_mode', 'default');
+    $nonListedStockMode = $formNonListedOutOfStockMode;
     $nonListedOutOfStockValue = 2;
     if ($nonListedStockMode === 'deny') {
       $nonListedOutOfStockValue = 0;
@@ -222,10 +237,29 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       $nonListedOutOfStockValue = 1;
     }
 
-    $includedProductIds = [];
+    $nonListedBatchLimit = $formNonListedBatchLimit;
+    $nonListedOffset = $formNonListedOffset;
 
-    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges): bool {
+    $includedProductIds = [];
+    $notFoundInRun = [];
+
+    $applyProductChanges = static function (array $item, int $setActive, int $setOutOfStock, string $scopeLabel) use ($pdo, $siteId, $psBaseUrl, $psApiKey, &$results, $bulkDebugEnabled, $respectSkuManualChanges, &$notFoundInRun): string {
       $productId = (int)$item['product_id'];
+      if (isset($notFoundInRun[$productId])) {
+        $results[] = [
+          'scope' => $scopeLabel,
+          'supplier_sku' => $item['supplier_sku'],
+          'sku' => $item['sku'],
+          'ps_product_id' => '',
+          'active' => $setActive,
+          'out_of_stock' => $setOutOfStock,
+          'status' => 'NOT_FOUND',
+          'error' => 'Sin reintento en esta corrida: id_product no resuelto previamente.',
+          'relink' => '',
+        ];
+        return 'NOT_FOUND';
+      }
+
       $remoteProductId = null;
       $mapSt = $pdo->prepare('SELECT remote_id FROM site_product_map WHERE site_id = ? AND product_id = ? LIMIT 1');
       $mapSt->execute([$siteId, $productId]);
@@ -234,8 +268,8 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         $remoteProductId = (int)$mapRow['remote_id'];
       }
 
+      $testedCandidates = [];
       if (!$remoteProductId) {
-        $testedCandidates = [];
         try {
           $remoteProductId = ps_bulk_resolve_product_id($item, $psBaseUrl, $psApiKey, $testedCandidates);
           if ($remoteProductId > 0) {
@@ -256,12 +290,13 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
             'error' => $t->getMessage(),
             'relink' => '',
           ];
-          return false;
+          return 'ERROR';
         }
       }
 
       if (!$remoteProductId) {
-        $candidateText = implode(', ', $testedCandidates ?? ps_bulk_reference_candidates($item));
+        $notFoundInRun[$productId] = true;
+        $candidateText = implode(', ', $testedCandidates ?: ps_bulk_reference_candidates($item));
         $results[] = [
           'scope' => $scopeLabel,
           'supplier_sku' => $item['supplier_sku'],
@@ -269,12 +304,11 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'ps_product_id' => '',
           'active' => $setActive,
           'out_of_stock' => $setOutOfStock,
-          'status' => 'ERROR',
-          'error' => 'No se pudo resolver id_product en PrestaShop. Probé: ' . $candidateText,
+          'status' => 'NOT_FOUND',
+          'error' => 'No existe en PrestaShop. Probé: ' . $candidateText,
         ];
-        return false;
+        return 'NOT_FOUND';
       }
-
 
       $expectedSku = trim((string)($item['sku'] ?? ''));
       if ($expectedSku === '') {
@@ -297,7 +331,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
             'error' => 'No se pudo validar reference actual: ' . $t->getMessage(),
             'relink' => '',
           ];
-          return false;
+          return 'ERROR';
         }
 
         if ($referenceActual !== $expectedSku) {
@@ -317,7 +351,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               'error' => 'No se pudo resolver relink automático: ' . $t->getMessage(),
               'relink' => '',
             ];
-            return false;
+            return 'ERROR';
           }
 
           if ($newRemoteProductId && (int)$newRemoteProductId !== (int)$remoteProductId) {
@@ -342,7 +376,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
               'error' => 'Referencia en PrestaShop fue modificada (actual=' . $referenceActual . ', esperado=' . $expectedSku . '). No se encontró relink automático. Probé: ' . $candidateText,
               'relink' => '',
             ];
-            return false;
+            return 'SKIPPED';
           }
         }
       }
@@ -371,7 +405,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           $resultRow['reference_after'] = (string)($activeUpdateDebug['reference_after'] ?? '');
         }
         $results[] = $resultRow;
-        return true;
+        return 'OK';
       } catch (Throwable $t) {
         $debug = [];
         if ($t instanceof PsRequestException) {
@@ -392,7 +426,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'status_code' => (string)($debug['status_code'] ?? ''),
           'response_body_xml' => (string)($debug['response_body_xml'] ?? ''),
         ];
-        return false;
+        return 'ERROR';
       }
     };
 
@@ -404,32 +438,48 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
       $includedProductIds[] = $productId;
       $includedTotalCount++;
-      if ($applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV')) {
+      $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
+      if ($status === 'OK') {
         $includedOkCount++;
       }
     }
 
     if ($applyToNonListed) {
-      $nonListedItems = [];
+      $nonListedTotalAvailable = 0;
       if (count($includedProductIds) > 0) {
         $placeholders = implode(',', array_fill(0, count($includedProductIds), '?'));
+        $nonListedCountSt = $pdo->prepare("SELECT COUNT(DISTINCT ps.product_id)
+          FROM product_suppliers ps
+          WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})");
+        $nonListedCountSt->execute(array_merge([$supplierId], $includedProductIds));
+        $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
+
         $nonListedSt = $pdo->prepare("SELECT p.id, p.sku, p.name, ps.supplier_sku
           FROM product_suppliers ps
           INNER JOIN products p ON p.id = ps.product_id
           WHERE ps.supplier_id = ? AND ps.product_id NOT IN ({$placeholders})
-          GROUP BY p.id, p.sku, p.name, ps.supplier_sku");
-        $nonListedSt->execute(array_merge([$supplierId], $includedProductIds));
+          GROUP BY p.id, p.sku, p.name, ps.supplier_sku
+          ORDER BY p.id ASC
+          LIMIT ? OFFSET ?");
+        $nonListedSt->execute(array_merge([$supplierId], $includedProductIds, [$nonListedBatchLimit, $nonListedOffset]));
       } else {
+        $nonListedCountSt = $pdo->prepare('SELECT COUNT(DISTINCT ps.product_id) FROM product_suppliers ps WHERE ps.supplier_id = ?');
+        $nonListedCountSt->execute([$supplierId]);
+        $nonListedTotalAvailable = (int)$nonListedCountSt->fetchColumn();
+
         $nonListedSt = $pdo->prepare('SELECT p.id, p.sku, p.name, ps.supplier_sku
           FROM product_suppliers ps
           INNER JOIN products p ON p.id = ps.product_id
           WHERE ps.supplier_id = ?
-          GROUP BY p.id, p.sku, p.name, ps.supplier_sku');
-        $nonListedSt->execute([$supplierId]);
+          GROUP BY p.id, p.sku, p.name, ps.supplier_sku
+          ORDER BY p.id ASC
+          LIMIT ? OFFSET ?');
+        $nonListedSt->execute([$supplierId, $nonListedBatchLimit, $nonListedOffset]);
       }
 
+      $nonListedBatchItems = [];
       while ($row = $nonListedSt->fetch()) {
-        $nonListedItems[] = [
+        $nonListedBatchItems[] = [
           'product_id' => (int)$row['id'],
           'supplier_sku' => (string)$row['supplier_sku'],
           'sku' => (string)$row['sku'],
@@ -437,16 +487,29 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         ];
       }
 
-      $nonListedTotalCount = count($nonListedItems);
-      foreach ($nonListedItems as $item) {
-        if ($applyProductChanges($item, $nonListedActiveValue, $nonListedOutOfStockValue, 'no incluido')) {
+      $nonListedTotalCount = $nonListedTotalAvailable;
+      $nonListedBatchProcessed = count($nonListedBatchItems);
+      foreach ($nonListedBatchItems as $item) {
+        $status = $applyProductChanges($item, $nonListedActiveValue, $nonListedOutOfStockValue, 'no incluido');
+        if ($status === 'OK') {
           $nonListedOkCount++;
+        } elseif ($status === 'SKIPPED') {
+          $nonListedSkippedCount++;
+        } elseif ($status === 'NOT_FOUND') {
+          $nonListedNotFoundCount++;
+        } else {
+          $nonListedErrorCount++;
         }
       }
+
+      $nextNonListedOffset = $nonListedOffset + $nonListedBatchProcessed;
+      $nonListedPendingCount = max(0, $nonListedTotalAvailable - $nextNonListedOffset);
     }
 
     if ($includedTotalCount > 0 || $nonListedTotalCount > 0) {
-      $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}. No incluidos actualizados: {$nonListedOkCount} / {$nonListedTotalCount}.";
+      $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}."
+        . " No incluidos procesados en lote: {$nonListedBatchProcessed} (OK {$nonListedOkCount}, SKIPPED {$nonListedSkippedCount}, NOT_FOUND {$nonListedNotFoundCount}, ERROR {$nonListedErrorCount})."
+        . " Pendientes no incluidos: {$nonListedPendingCount}.";
     } else {
       $applyError = 'No hay productos seleccionados para aplicar.';
     }
@@ -477,6 +540,18 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     <?php if ($applyError !== ''): ?><div class="alert alert-danger"><?= e($applyError) ?></div><?php endif; ?>
     <?php if ($applySuccess !== ''): ?><div class="alert alert-success"><?= e($applySuccess) ?></div><?php endif; ?>
 
+    <?php if ($formApplyToNonListed && is_post() && post('action') === 'ps_bulk_apply'): ?>
+      <div class="card stack">
+        <h3 style="margin:0">Resumen no incluidos</h3>
+        <div>Procesados en este lote: <strong><?= (int)$nonListedBatchProcessed ?></strong></div>
+        <div>OK: <strong><?= (int)$nonListedOkCount ?></strong></div>
+        <div>SKIPPED: <strong><?= (int)$nonListedSkippedCount ?></strong></div>
+        <div>NOT_FOUND (no existe en PS): <strong><?= (int)$nonListedNotFoundCount ?></strong></div>
+        <div>ERROR: <strong><?= (int)$nonListedErrorCount ?></strong></div>
+        <div>Pendientes restantes: <strong><?= (int)$nonListedPendingCount ?></strong></div>
+      </div>
+    <?php endif; ?>
+
     <div class="card stack">
       <h3 style="margin:0">Resumen CSV</h3>
       <div>Encontrados: <strong><?= count($found) ?></strong></div>
@@ -496,28 +571,28 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         <div class="form-field">
           <span class="form-label">Fuera de línea</span>
           <select class="form-control" name="offline_mode">
-            <option value="online">En línea</option>
-            <option value="offline">Fuera de línea</option>
+            <option value="online" <?= $formOfflineMode === 'online' ? 'selected' : '' ?>>En línea</option>
+            <option value="offline" <?= $formOfflineMode === 'offline' ? 'selected' : '' ?>>Fuera de línea</option>
           </select>
         </div>
 
         <div class="form-field">
           <span class="form-label">Cuando no haya existencias</span>
-          <label><input type="radio" name="out_of_stock_mode" value="deny"> Denegar pedidos</label><br>
-          <label><input type="radio" name="out_of_stock_mode" value="allow"> Permitir pedidos</label><br>
-          <label><input type="radio" name="out_of_stock_mode" value="default" checked> Usar comportamiento predeterminado (Denegar pedidos)</label>
+          <label><input type="radio" name="out_of_stock_mode" value="deny" <?= $formOutOfStockMode === 'deny' ? 'checked' : '' ?>> Denegar pedidos</label><br>
+          <label><input type="radio" name="out_of_stock_mode" value="allow" <?= $formOutOfStockMode === 'allow' ? 'checked' : '' ?>> Permitir pedidos</label><br>
+          <label><input type="radio" name="out_of_stock_mode" value="default" <?= $formOutOfStockMode === 'default' ? 'checked' : '' ?>> Usar comportamiento predeterminado (Denegar pedidos)</label>
         </div>
 
 
         <div class="form-field">
-          <label><input type="checkbox" name="respect_sku_manual_changes" value="1" checked> Respetar cambios manuales de SKU en PrestaShop</label>
+          <label><input type="checkbox" name="respect_sku_manual_changes" value="1" <?= $formRespectSkuManualChanges ? 'checked' : '' ?>> Respetar cambios manuales de SKU en PrestaShop</label>
           <div class="muted" style="margin-top:var(--space-2)">Si la referencia actual del producto no coincide con el SKU esperado en TS Work, se marcará como SKIPPED y no se aplicarán cambios.</div>
         </div>
 
         <div class="form-field">
           <span class="form-label">Productos del proveedor no incluidos en el CSV</span>
-          <label><input type="radio" name="apply_to_non_listed" value="0" checked> No hacer nada</label><br>
-          <label><input type="radio" name="apply_to_non_listed" value="1"> Hacer cambios</label>
+          <label><input type="radio" name="apply_to_non_listed" value="0" <?= !$formApplyToNonListed ? 'checked' : '' ?>> No hacer nada</label><br>
+          <label><input type="radio" name="apply_to_non_listed" value="1" <?= $formApplyToNonListed ? 'checked' : '' ?>> Hacer cambios</label>
           <div class="muted" style="margin-top:var(--space-2)">No incluidos detectados: <strong><?= (int)$nonListedDetectedCount ?></strong></div>
         </div>
 
@@ -526,16 +601,23 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           <div class="form-field">
             <span class="form-label">Fuera de línea (para NO incluidos)</span>
             <select class="form-control" name="non_listed_active_mode">
-              <option value="en_linea">En línea</option>
-              <option value="fuera_linea">Fuera de línea</option>
+              <option value="en_linea" <?= $formNonListedActiveMode === 'en_linea' ? 'selected' : '' ?>>En línea</option>
+              <option value="fuera_linea" <?= $formNonListedActiveMode === 'fuera_linea' ? 'selected' : '' ?>>Fuera de línea</option>
             </select>
+          </div>
+
+
+          <div class="form-field">
+            <span class="form-label">Procesar máximo N no incluidos por ejecución</span>
+            <input class="form-control" type="number" min="1" max="500" name="non_listed_batch_limit" value="<?= (int)$formNonListedBatchLimit ?>">
+            <input type="hidden" name="non_listed_offset" value="<?= (int)$formNonListedOffset ?>">
           </div>
 
           <div class="form-field">
             <span class="form-label">Cuando no haya existencias (para NO incluidos)</span>
-            <label><input type="radio" name="non_listed_outofstock_mode" value="deny"> Denegar pedidos</label><br>
-            <label><input type="radio" name="non_listed_outofstock_mode" value="allow"> Permitir pedidos</label><br>
-            <label><input type="radio" name="non_listed_outofstock_mode" value="default" checked> Usar comportamiento predeterminado</label>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="deny" <?= $formNonListedOutOfStockMode === 'deny' ? 'checked' : '' ?>> Denegar pedidos</label><br>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="allow" <?= $formNonListedOutOfStockMode === 'allow' ? 'checked' : '' ?>> Permitir pedidos</label><br>
+            <label><input type="radio" name="non_listed_outofstock_mode" value="default" <?= $formNonListedOutOfStockMode === 'default' ? 'checked' : '' ?>> Usar comportamiento predeterminado</label>
           </div>
         </div>
 
@@ -564,6 +646,9 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
         <div class="inline-actions">
           <button class="btn" type="submit">Aplicar cambios en PrestaShop</button>
+          <?php if ($formApplyToNonListed && $nonListedPendingCount > 0): ?>
+            <button class="btn btn-ghost" type="submit" name="non_listed_offset" value="<?= (int)$nextNonListedOffset ?>">Procesar siguiente lote</button>
+          <?php endif; ?>
         </div>
       </form>
     </div>
