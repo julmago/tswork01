@@ -194,6 +194,7 @@ $nonListedErrorCount = 0;
 $nonListedBatchProcessed = 0;
 $nonListedPendingCount = 0;
 $nextNonListedOffset = 0;
+$nonListedProcessedTotal = 0;
 
 $formOfflineMode = post('offline_mode', 'online') === 'offline' ? 'offline' : 'online';
 $formOutOfStockMode = post('out_of_stock_mode', 'default');
@@ -203,6 +204,22 @@ $formNonListedActiveMode = post('non_listed_active_mode', 'en_linea') === 'fuera
 $formNonListedOutOfStockMode = post('non_listed_outofstock_mode', 'default');
 $formNonListedBatchLimit = max(1, min(200, (int)($_POST['non_listed_batch_limit'] ?? 50)));
 $formNonListedOffset = max(0, (int)($_POST['non_listed_offset'] ?? 0));
+$formNonListedAutoContinue = post('non_listed_auto_continue', '0') === '1';
+
+$autoContinueSettings = $_SESSION['ps_bulk_non_listed_auto_continue'] ?? null;
+$shouldAutoSubmitNextBatch = false;
+if (!is_post() && (int)($_GET['auto_continue'] ?? 0) === 1 && is_array($autoContinueSettings)) {
+  $formOfflineMode = ($autoContinueSettings['offline_mode'] ?? 'online') === 'offline' ? 'offline' : 'online';
+  $formOutOfStockMode = (string)($autoContinueSettings['out_of_stock_mode'] ?? 'default');
+  $formRespectSkuManualChanges = (int)($autoContinueSettings['respect_sku_manual_changes'] ?? 1) === 1;
+  $formApplyToNonListed = (int)($autoContinueSettings['apply_to_non_listed'] ?? 0) === 1;
+  $formNonListedActiveMode = ($autoContinueSettings['non_listed_active_mode'] ?? 'en_linea') === 'fuera_linea' ? 'fuera_linea' : 'en_linea';
+  $formNonListedOutOfStockMode = (string)($autoContinueSettings['non_listed_outofstock_mode'] ?? 'default');
+  $formNonListedBatchLimit = max(1, min(200, (int)($autoContinueSettings['non_listed_batch_limit'] ?? 50)));
+  $formNonListedOffset = max(0, (int)($autoContinueSettings['non_listed_offset'] ?? 0));
+  $formNonListedAutoContinue = (int)($autoContinueSettings['non_listed_auto_continue'] ?? 0) === 1;
+  $shouldAutoSubmitNextBatch = $formApplyToNonListed;
+}
 
 if (is_post() && post('action') === 'ps_bulk_apply') {
   if (!can_suppliers_ps_bulk()) {
@@ -237,6 +254,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
 
       $applyToNonListed = $formApplyToNonListed;
+      $processIncludedCsv = (int)($_POST['process_csv_included'] ?? 1) === 1;
       $respectSkuManualChanges = $formRespectSkuManualChanges;
       $nonListedOfflineMode = $formNonListedActiveMode;
       $nonListedActiveValue = $nonListedOfflineMode === 'fuera_linea' ? 0 : 1;
@@ -443,18 +461,22 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       }
       };
 
-      foreach ($found as $item) {
-        $productId = (int)$item['product_id'];
-        if (!isset($selected[$productId])) {
-          continue;
-        }
+      if ($processIncludedCsv) {
+        foreach ($found as $item) {
+          $productId = (int)$item['product_id'];
+          if (!isset($selected[$productId])) {
+            continue;
+          }
 
-        $includedProductIds[] = $productId;
-        $includedTotalCount++;
-        $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
-        if ($status === 'OK') {
-          $includedOkCount++;
+          $includedProductIds[] = $productId;
+          $includedTotalCount++;
+          $status = $applyProductChanges($item, $activeValue, $outOfStockValue, 'incluido CSV');
+          if ($status === 'OK') {
+            $includedOkCount++;
+          }
         }
+      } else {
+        $includedProductIds = $foundProductIds;
       }
 
       if ($applyToNonListed) {
@@ -519,7 +541,28 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
         $nextNonListedOffset = $nonListedOffset + $nonListedBatchProcessed;
         $nonListedPendingCount = max(0, $nonListedTotalAvailable - $nextNonListedOffset);
+        $nonListedProcessedTotal = min($nonListedTotalAvailable, $nextNonListedOffset);
+
+        $formNonListedOffset = $nextNonListedOffset;
+
+        if ($formNonListedAutoContinue && $nonListedPendingCount > 0) {
+          $_SESSION['ps_bulk_non_listed_auto_continue'] = [
+            'offline_mode' => $formOfflineMode,
+            'out_of_stock_mode' => $formOutOfStockMode,
+            'respect_sku_manual_changes' => $formRespectSkuManualChanges ? 1 : 0,
+            'apply_to_non_listed' => $formApplyToNonListed ? 1 : 0,
+            'non_listed_active_mode' => $formNonListedActiveMode,
+            'non_listed_outofstock_mode' => $formNonListedOutOfStockMode,
+            'non_listed_batch_limit' => $formNonListedBatchLimit,
+            'non_listed_offset' => $nextNonListedOffset,
+            'non_listed_auto_continue' => 1,
+          ];
+          header('Location: suppliers_ps_bulk.php?step=2&auto_continue=1');
+          exit;
+        }
       }
+
+      unset($_SESSION['ps_bulk_non_listed_auto_continue']);
 
       if ($includedTotalCount > 0 || $nonListedTotalCount > 0) {
         $applySuccess = "Proceso finalizado. Incluidos actualizados: {$includedOkCount} / {$includedTotalCount}."
@@ -567,6 +610,8 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     <?php if ($formApplyToNonListed && is_post() && post('action') === 'ps_bulk_apply'): ?>
       <div class="card stack">
         <h3 style="margin:0">Resumen no incluidos</h3>
+        <div>Procesados total: <strong><?= (int)$nonListedProcessedTotal ?></strong> / detectados: <strong><?= (int)$nonListedDetectedCount ?></strong></div>
+        <div>Pendientes: <strong><?= (int)$nonListedPendingCount ?></strong></div>
         <div>Procesados en este lote: <strong><?= (int)$nonListedBatchProcessed ?></strong></div>
         <div>OK: <strong><?= (int)$nonListedOkCount ?></strong></div>
         <div>SKIPPED: <strong><?= (int)$nonListedSkippedCount ?></strong></div>
@@ -591,6 +636,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     <div class="card stack">
       <form method="post" class="stack">
         <input type="hidden" name="action" value="ps_bulk_apply">
+        <input type="hidden" name="process_csv_included" value="1">
 
         <div class="form-field">
           <span class="form-label">Fuera de línea</span>
@@ -638,6 +684,10 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           </div>
 
           <div class="form-field">
+            <label><input type="checkbox" name="non_listed_auto_continue" value="1" <?= $formNonListedAutoContinue ? 'checked' : '' ?>> Auto-continuar hasta finalizar</label>
+          </div>
+
+          <div class="form-field">
             <span class="form-label">Cuando no haya existencias (para NO incluidos)</span>
             <label><input type="radio" name="non_listed_outofstock_mode" value="deny" <?= $formNonListedOutOfStockMode === 'deny' ? 'checked' : '' ?>> Denegar pedidos</label><br>
             <label><input type="radio" name="non_listed_outofstock_mode" value="allow" <?= $formNonListedOutOfStockMode === 'allow' ? 'checked' : '' ?>> Permitir pedidos</label><br>
@@ -671,7 +721,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         <div class="inline-actions">
           <button class="btn" type="submit">Aplicar cambios en PrestaShop</button>
           <?php if ($formApplyToNonListed && $nonListedPendingCount > 0): ?>
-            <button class="btn btn-ghost" type="submit" name="non_listed_offset" value="<?= (int)$nextNonListedOffset ?>">Procesar siguiente lote</button>
+            <button class="btn btn-ghost" type="submit" name="non_listed_offset" value="<?= (int)$nextNonListedOffset ?>" onclick="document.querySelector('input[name=process_csv_included]').value='0';">Procesar siguiente lote</button>
           <?php endif; ?>
         </div>
       </form>
@@ -751,6 +801,18 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     toggleOptions();
   })();
+
+  <?php if ($shouldAutoSubmitNextBatch): ?>
+  (function () {
+    const form = document.querySelector('form[method="post"]');
+    const includedInput = form ? form.querySelector('input[name="process_csv_included"]') : null;
+    if (!form || !includedInput) {
+      return;
+    }
+    includedInput.value = '0';
+    form.submit();
+  })();
+  <?php endif; ?>
 </script>
 </body>
 </html>
