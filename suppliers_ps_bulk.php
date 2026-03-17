@@ -624,9 +624,9 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
   <style>
     .dv-results-table { width:100%; border-collapse:separate; border-spacing:0 10px; }
     .dv-results-table thead th { font-weight:600; opacity:.9; padding:10px 14px; text-align:left; }
-    .dv-results-table tbody tr { background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); transition: transform .15s ease, box-shadow .15s ease; }
+    .dv-results-table tbody tr { background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); transition: transform .15s ease, box-shadow .15s ease; cursor:default; }
     .dv-results-table tbody tr td { padding:12px 14px; }
-    .dv-results-table tbody tr:hover { box-shadow: 0 0 0 1px rgba(255,0,0,.25), 0 10px 30px rgba(0,0,0,.35); transform: translateY(-1px); cursor:pointer; }
+    .dv-results-table tbody tr:hover { box-shadow: 0 0 0 1px rgba(255,0,0,.25), 0 10px 30px rgba(0,0,0,.35); transform: translateY(-1px); }
     .dv-results-table .dv-col-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; opacity:.95; }
     .dv-results-table .dv-psid { text-align:left !important; justify-content:flex-start !important; }
     .dv-results-table .dv-col-ps-id { text-align:left; white-space:nowrap; }
@@ -822,7 +822,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 }
                 $relinkRaw = trim((string)($row['relink'] ?? ''));
                 $relinkValue = $relinkRaw !== '' ? $relinkRaw : '—';
-                $requestUrl = trim((string)($row['request_url'] ?? ''));
                 $statusValue = strtoupper((string)($row['status'] ?? ''));
                 $statusClass = 'dv-skip';
                 if ($statusValue === 'OK') {
@@ -833,7 +832,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                   $statusClass = 'dv-err';
                 }
               ?>
-              <tr class="dv-row-link" data-url="<?= e($requestUrl) ?>">
+              <tr>
                 <td class="dv-col-mono"><?= e($row['supplier_sku']) ?></td>
                 <td class="dv-col-mono"><?= e($row['sku']) ?></td>
                 <td class="dv-col-ps-id dv-psid"><?= (int)$row['ps_product_id'] ?></td>
@@ -868,19 +867,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     toggleOptions();
   })();
-
-  document.querySelectorAll('tr.dv-row-link').forEach((tr) => {
-    tr.addEventListener('click', () => {
-      if ((window.getSelection && window.getSelection()?.toString()) || document.selection?.type === 'Text') {
-        return;
-      }
-      const url = tr.dataset.url;
-      if (url) {
-        window.open(url, '_blank');
-      }
-    });
-  });
-
   <?php if ($shouldAutoSubmitNextBatch): ?>
   (function () {
     const form = document.querySelector('form[method="post"]');
