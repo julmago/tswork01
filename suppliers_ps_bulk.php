@@ -686,8 +686,9 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
     </div>
 
     <div class="card stack">
-      <form method="post" class="stack">
-        <input type="hidden" name="action" value="ps_bulk_apply">
+      <form method="post" class="stack" id="ps-bulk-form">
+        <input type="hidden" name="action" value="start">
+        <input type="hidden" name="step_limit" value="5">
         <input type="hidden" name="process_csv_included" value="1">
 
         <div class="form-field">
@@ -779,105 +780,137 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         </div>
 
         <div class="inline-actions">
-          <button class="btn" type="submit">Aplicar cambios en PrestaShop</button>
-          <?php if ($formApplyToNonListed && $nonListedPendingCount > 0): ?>
-            <button class="btn btn-ghost" type="submit" name="non_listed_offset" value="<?= (int)$nextNonListedOffset ?>" onclick="document.querySelector('input[name=process_csv_included]').value='0';">Procesar siguiente lote</button>
-          <?php endif; ?>
+          <button class="btn" type="submit" id="ps-bulk-start-btn">Aplicar cambios en PrestaShop</button>
+          <span class="muted" id="ps-bulk-run-state">Esperando inicio…</span>
         </div>
       </form>
     </div>
 
-    <?php if (count($results) > 0): ?>
-      <div class="card stack">
-        <h3 style="margin:0">Resultados</h3>
-        <div class="table-wrap">
-          <table class="dv-results-table">
-            <thead>
-              <tr>
-                <th>SKU proveedor</th>
-                <th>SKU TSWork</th>
-                <th class="dv-psid">PS ID</th>
-                <th>Acción</th>
-                <th>Resultado</th>
-                <th>Relink</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($results as $row): ?>
-              <?php
-                $activeBefore = (string)($row['active_before'] ?? '');
-                $activeAfter = (string)($row['active_after'] ?? '');
-                $outOfStockBefore = (string)($row['out_of_stock_before'] ?? '');
-                $outOfStockAfter = (string)($row['out_of_stock_after'] ?? '');
-                $changedActive = $activeBefore != $activeAfter;
-                $changedOOS = $outOfStockBefore != $outOfStockAfter;
-                if ($changedActive && $changedOOS) {
-                  $actionLabel = 'Ambos';
-                } elseif ($changedActive) {
-                  $actionLabel = 'Active';
-                } elseif ($changedOOS) {
-                  $actionLabel = 'Stock';
-                } else {
-                  $actionLabel = 'Sin cambios';
-                }
-                $relinkRaw = trim((string)($row['relink'] ?? ''));
-                $relinkValue = $relinkRaw !== '' ? $relinkRaw : '—';
-                $statusValue = strtoupper((string)($row['status'] ?? ''));
-                $statusClass = 'dv-skip';
-                if ($statusValue === 'OK') {
-                  $statusClass = 'dv-ok';
-                } elseif ($statusValue === 'NOT_FOUND') {
-                  $statusClass = 'dv-warn';
-                } elseif ($statusValue === 'ERROR') {
-                  $statusClass = 'dv-err';
-                }
-              ?>
-              <tr>
-                <td class="dv-col-mono"><?= e($row['supplier_sku']) ?></td>
-                <td class="dv-col-mono"><?= e($row['sku']) ?></td>
-                <td class="dv-col-ps-id dv-psid"><?= (int)$row['ps_product_id'] ?></td>
-                <td><span class="dv-chip"><?= e($actionLabel) ?></span></td>
-                <td><span class="dv-badge <?= e($statusClass) ?>"><?= e($statusValue) ?></span></td>
-                <td><span class="dv-chip"><?= e($relinkValue) ?></span></td>
-              </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
+        <div class="card stack" id="ps-bulk-results-card">
+      <h3 style="margin:0">Resultados</h3>
+      <div class="muted" id="ps-bulk-summary">Procesados: <strong>0</strong> / <strong>0</strong> · OK: <strong>0</strong> · NOT_FOUND: <strong>0</strong> · ERROR: <strong>0</strong></div>
+      <div class="table-wrap">
+        <table class="dv-results-table">
+          <thead>
+            <tr>
+              <th>SKU proveedor</th>
+              <th>SKU TSWork</th>
+              <th class="dv-psid">PS ID</th>
+              <th>Acción</th>
+              <th>Resultado</th>
+              <th>Relink</th>
+            </tr>
+          </thead>
+          <tbody id="ps-bulk-results-body"></tbody>
+        </table>
       </div>
-    <?php endif; ?>
+    </div>
   </div>
 </main>
 <script>
   (function () {
     const options = document.getElementById('non-listed-options');
     const radios = document.querySelectorAll('input[name="apply_to_non_listed"]');
-    if (!options || radios.length === 0) {
+    if (options && radios.length > 0) {
+      function toggleOptions() {
+        const selected = document.querySelector('input[name="apply_to_non_listed"]:checked');
+        options.style.display = selected && selected.value === '1' ? 'block' : 'none';
+      }
+      radios.forEach((radio) => radio.addEventListener('change', toggleOptions));
+      toggleOptions();
+    }
+
+    const form = document.getElementById('ps-bulk-form');
+    const resultsBody = document.getElementById('ps-bulk-results-body');
+    const summary = document.getElementById('ps-bulk-summary');
+    const stateEl = document.getElementById('ps-bulk-run-state');
+    const startBtn = document.getElementById('ps-bulk-start-btn');
+    if (!form || !resultsBody || !summary || !stateEl || !startBtn) {
       return;
     }
 
-    function toggleOptions() {
-      const selected = document.querySelector('input[name="apply_to_non_listed"]:checked');
-      options.style.display = selected && selected.value === '1' ? 'block' : 'none';
+    function badgeClass(result) {
+      if (result === 'OK') return 'dv-ok';
+      if (result === 'NOT_FOUND') return 'dv-warn';
+      if (result === 'ERROR') return 'dv-err';
+      return 'dv-skip';
     }
 
-    radios.forEach((radio) => {
-      radio.addEventListener('change', toggleOptions);
+    function updateSummary(payload) {
+      const counters = payload.counters || {};
+      summary.innerHTML = 'Procesados: <strong>' + (payload.processed || 0) + '</strong> / <strong>' + (payload.total_estimated || 0) + '</strong> · OK: <strong>' + (counters.ok || 0) + '</strong> · NOT_FOUND: <strong>' + (counters.not_found || 0) + '</strong> · ERROR: <strong>' + (counters.error || 0) + '</strong>';
+    }
+
+    function appendRows(rows) {
+      (rows || []).forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.style.opacity = '0';
+        tr.innerHTML = '<td class="dv-col-mono">' + (row.sku_supplier || '') + '</td>'
+          + '<td class="dv-col-mono">' + (row.sku_tsw || '') + '</td>'
+          + '<td class="dv-col-ps-id dv-psid">' + (row.ps_id || '') + '</td>'
+          + '<td><span class="dv-chip">' + (row.action || 'Sin cambios') + '</span></td>'
+          + '<td><span class="dv-badge ' + badgeClass((row.result || '').toUpperCase()) + '">' + (row.result || '—') + '</span></td>'
+          + '<td><span class="dv-chip">' + ((row.relink || '').trim() || '—') + '</span></td>';
+        resultsBody.appendChild(tr);
+        requestAnimationFrame(() => { tr.style.transition = 'opacity .25s ease'; tr.style.opacity = '1'; });
+      });
+    }
+
+    async function postApi(data) {
+      const res = await fetch('api/ps_bulk_run.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+        body: new URLSearchParams(data),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error || 'Error en proceso bulk.');
+      }
+      return payload;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      resultsBody.innerHTML = '';
+      stateEl.textContent = 'Iniciando…';
+      startBtn.disabled = true;
+
+      const data = new FormData(form);
+      const startPayload = {};
+      data.forEach((value, key) => { startPayload[key] = String(value); });
+      startPayload.action = 'start';
+
+      try {
+        const started = await postApi(startPayload);
+        updateSummary({processed: 0, total_estimated: started.total_estimated || 0, counters: {ok: 0, not_found: 0, error: 0}});
+        stateEl.textContent = 'Run #' + started.run_id + ' en progreso…';
+
+        const autoContinue = !!form.querySelector('input[name="non_listed_auto_continue"]:checked');
+        const stepLimitRaw = parseInt(form.querySelector('input[name="step_limit"]')?.value || '5', 10);
+        const stepLimit = Number.isFinite(stepLimitRaw) ? Math.max(1, Math.min(20, stepLimitRaw)) : 5;
+
+        let done = !!started.done;
+        while (!done) {
+          const step = await postApi({action: 'step', run_id: String(started.run_id), limit: String(stepLimit)});
+          appendRows(step.rows || []);
+          updateSummary(step);
+          done = !!step.done;
+          if (!autoContinue && !done) {
+            stateEl.textContent = 'Pausado: activar auto-continuar para correr hasta el final.';
+            break;
+          }
+        }
+
+        if (done) {
+          stateEl.textContent = 'Finalizado.';
+        }
+      } catch (error) {
+        stateEl.textContent = 'Error: ' + (error.message || 'desconocido');
+      } finally {
+        startBtn.disabled = false;
+      }
     });
-
-    toggleOptions();
   })();
-  <?php if ($shouldAutoSubmitNextBatch): ?>
-  (function () {
-    const form = document.querySelector('form[method="post"]');
-    const includedInput = form ? form.querySelector('input[name="process_csv_included"]') : null;
-    if (!form || !includedInput) {
-      return;
-    }
-    includedInput.value = '0';
-    form.submit();
-  })();
-  <?php endif; ?>
 </script>
 </body>
 </html>
