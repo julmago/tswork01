@@ -621,6 +621,22 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
   <meta charset="utf-8">
   <title>TS WORK</title>
   <?= theme_css_links() ?>
+  <style>
+    .dv-results-table { width:100%; border-collapse:separate; border-spacing:0 10px; }
+    .dv-results-table thead th { font-weight:600; opacity:.9; padding:10px 14px; text-align:left; }
+    .dv-results-table tbody tr { background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); transition: transform .15s ease, box-shadow .15s ease; }
+    .dv-results-table tbody tr td { padding:12px 14px; }
+    .dv-results-table tbody tr:hover { box-shadow: 0 0 0 1px rgba(255,0,0,.25), 0 10px 30px rgba(0,0,0,.35); transform: translateY(-1px); cursor:pointer; }
+    .dv-results-table .dv-col-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; opacity:.95; }
+    .dv-results-table .dv-col-ps-id { text-align:right; white-space:nowrap; }
+    .dv-badge { display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:.82rem; font-weight:600; letter-spacing:.01em; }
+    .dv-ok { background: rgba(34,197,94,.16); color:#86efac; border:1px solid rgba(34,197,94,.28); }
+    .dv-skip { background: rgba(148,163,184,.16); color:#cbd5e1; border:1px solid rgba(148,163,184,.3); }
+    .dv-warn { background: rgba(250,204,21,.16); color:#fde68a; border:1px solid rgba(250,204,21,.3); }
+    .dv-err { background: rgba(239,68,68,.16); color:#fca5a5; border:1px solid rgba(239,68,68,.35); }
+    .dv-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; border:1px solid rgba(255,255,255,.16); padding:4px 10px; background:rgba(255,255,255,.06); color:rgba(255,255,255,.92); font-size:.82rem; line-height:1.2; }
+    .dv-ext-link-icon { margin-left:6px; opacity:.9; font-size:.85em; }
+  </style>
 </head>
 <body class="<?= e(app_body_class()) ?>">
 <?php require __DIR__ . '/partials/header.php'; ?>
@@ -775,7 +791,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
       <div class="card stack">
         <h3 style="margin:0">Resultados</h3>
         <div class="table-wrap">
-          <table>
+          <table class="dv-results-table">
             <thead>
               <tr>
                 <th>SKU proveedor</th>
@@ -784,8 +800,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>Acción</th>
                 <th>Resultado</th>
                 <th>Relink</th>
-                <th>Ver</th>
-                <th>Detalle</th>
               </tr>
             </thead>
             <tbody>
@@ -809,40 +823,26 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 $relinkRaw = trim((string)($row['relink'] ?? ''));
                 $relinkValue = $relinkRaw !== '' ? $relinkRaw : '—';
                 $requestUrl = trim((string)($row['request_url'] ?? ''));
-                $isError = strtoupper((string)($row['status'] ?? '')) === 'ERROR';
+                $statusValue = strtoupper((string)($row['status'] ?? ''));
+                $statusClass = 'dv-skip';
+                if ($statusValue === 'OK') {
+                  $statusClass = 'dv-ok';
+                } elseif ($statusValue === 'NOT_FOUND') {
+                  $statusClass = 'dv-warn';
+                } elseif ($statusValue === 'ERROR') {
+                  $statusClass = 'dv-err';
+                }
               ?>
-              <tr>
-                <td><?= e($row['supplier_sku']) ?></td>
-                <td><?= e($row['sku']) ?></td>
-                <td><?= e((string)$row['ps_product_id']) ?></td>
-                <td><?= e($actionLabel) ?></td>
-                <td><?= e((string)($row['status'] ?? '')) ?></td>
-                <td><?= e($relinkValue) ?></td>
-                <td>
-                  <?php if ($requestUrl !== ''): ?>
-                    <a href="<?= e($requestUrl) ?>" target="_blank" rel="noopener noreferrer">Ver</a>
-                  <?php else: ?>
-                    —
-                  <?php endif; ?>
+              <tr class="dv-row-link" data-url="<?= e($requestUrl) ?>">
+                <td class="dv-col-mono"><?= e($row['supplier_sku']) ?></td>
+                <td class="dv-col-mono"><?= e($row['sku']) ?></td>
+                <td class="dv-col-ps-id">
+                  <?= e((string)$row['ps_product_id']) ?>
+                  <span class="dv-ext-link-icon" title="Abrir en PrestaShop API" aria-hidden="true">↗</span>
                 </td>
-                <td>
-                  <details>
-                    <summary>Detalle</summary>
-                    <div class="muted" style="margin-top:var(--space-2);padding:var(--space-2);border:1px solid var(--border-color);border-radius:8px;overflow-x:auto;max-width:520px;">
-                      <div><strong>id_stock_available:</strong> <?= e((string)($row['id_stock_available'] ?? '')) ?></div>
-                      <div><strong>active_before/after:</strong> <?= e($activeBefore) ?> → <?= e($activeAfter) ?></div>
-                      <div><strong>out_of_stock_before/after:</strong> <?= e($outOfStockBefore) ?> → <?= e($outOfStockAfter) ?></div>
-                      <div><strong>reference_after:</strong> <?= e((string)($row['reference_after'] ?? '')) ?></div>
-                      <?php if ((int)($row['shop_id'] ?? 0) > 0): ?>
-                        <div><strong>shop_id:</strong> <?= (int)$row['shop_id'] ?></div>
-                      <?php endif; ?>
-                      <?php if ($isError): ?>
-                        <div style="margin-top:var(--space-2)"><strong>Response XML (recortado):</strong></div>
-                        <pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre>
-                      <?php endif; ?>
-                    </div>
-                  </details>
-                </td>
+                <td><span class="dv-chip"><?= e($actionLabel) ?></span></td>
+                <td><span class="dv-badge <?= e($statusClass) ?>"><?= e($statusValue) ?></span></td>
+                <td><span class="dv-chip"><?= e($relinkValue) ?></span></td>
               </tr>
               <?php endforeach; ?>
             </tbody>
@@ -871,6 +871,18 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     toggleOptions();
   })();
+
+  document.querySelectorAll('tr.dv-row-link').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      if ((window.getSelection && window.getSelection()?.toString()) || document.selection?.type === 'Text') {
+        return;
+      }
+      const url = tr.dataset.url;
+      if (url) {
+        window.open(url, '_blank');
+      }
+    });
+  });
 
   <?php if ($shouldAutoSubmitNextBatch): ?>
   (function () {
