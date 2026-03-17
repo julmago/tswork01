@@ -430,7 +430,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
       try {
         $activeUpdateDebug = ps_update_product_active_with_credentials($remoteProductId, $setActive, $psBaseUrl, $psApiKey);
-        ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey);
+        $stockUpdateDebug = ps_update_product_out_of_stock_by_product_with_credentials($remoteProductId, $setOutOfStock, $psBaseUrl, $psApiKey);
 
         $resultRow = [
           'scope' => $scopeLabel,
@@ -446,11 +446,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'request_method' => (string)($activeUpdateDebug['method'] ?? 'PUT'),
           'status_code' => (string)($activeUpdateDebug['status_code'] ?? ''),
           'response_body_xml' => '',
+          'id_stock_available' => (string)($stockUpdateDebug['id_stock_available'] ?? ''),
+          'active_before' => (string)($activeUpdateDebug['active_before'] ?? ''),
+          'active_after' => (string)($activeUpdateDebug['active_after'] ?? ''),
+          'out_of_stock_before' => (string)($stockUpdateDebug['out_of_stock_before'] ?? ''),
+          'out_of_stock_after' => (string)($stockUpdateDebug['out_of_stock_after'] ?? ''),
+          'reference_before' => (string)($activeUpdateDebug['reference_before'] ?? ''),
+          'reference_after' => (string)($activeUpdateDebug['reference_after'] ?? ''),
         ];
-        if ($bulkDebugEnabled) {
-          $resultRow['reference_before'] = (string)($activeUpdateDebug['reference_before'] ?? '');
-          $resultRow['reference_after'] = (string)($activeUpdateDebug['reference_after'] ?? '');
-        }
         $results[] = $resultRow;
         return 'OK';
       } catch (Throwable $t) {
@@ -472,6 +475,13 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
           'request_method' => (string)($debug['method'] ?? 'PUT'),
           'status_code' => (string)($debug['status_code'] ?? ''),
           'response_body_xml' => (string)($debug['response_body_xml'] ?? ''),
+          'id_stock_available' => '',
+          'active_before' => (string)($debug['active_before'] ?? ''),
+          'active_after' => (string)($debug['active_after'] ?? ''),
+          'out_of_stock_before' => (string)($debug['out_of_stock_before'] ?? ''),
+          'out_of_stock_after' => (string)($debug['out_of_stock_after'] ?? ''),
+          'reference_before' => (string)($debug['reference_before'] ?? ''),
+          'reference_after' => (string)($debug['reference_after'] ?? ''),
         ];
         return 'ERROR';
       }
@@ -766,8 +776,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>SKU TSWork</th>
                 <th>Origen</th>
                 <th>PS product id</th>
+                <th>id_stock_available</th>
                 <th>active set</th>
                 <th>out_of_stock set</th>
+                <th>active_before</th>
+                <th>active_after</th>
+                <th>out_of_stock_before</th>
+                <th>out_of_stock_after</th>
+                <th>reference_after</th>
                 <th>Estado</th>
                 <th>Relink</th>
                 <th>Error</th>
@@ -776,7 +792,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <th>HTTP</th>
                 <?php if ($bulkDebugEnabled): ?>
                   <th>reference_before</th>
-                  <th>reference_after</th>
                 <?php endif; ?>
                 <th>Response XML (recortado)</th>
               </tr>
@@ -788,8 +803,14 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= e($row['sku']) ?></td>
                 <td><?= e((string)($row['scope'] ?? 'incluido CSV')) ?></td>
                 <td><?= e((string)$row['ps_product_id']) ?></td>
+                <td><?= e((string)($row['id_stock_available'] ?? '')) ?></td>
                 <td><?= (int)$row['active'] ?></td>
                 <td><?= (int)$row['out_of_stock'] ?></td>
+                <td><?= e((string)($row['active_before'] ?? '')) ?></td>
+                <td><?= e((string)($row['active_after'] ?? '')) ?></td>
+                <td><?= e((string)($row['out_of_stock_before'] ?? '')) ?></td>
+                <td><?= e((string)($row['out_of_stock_after'] ?? '')) ?></td>
+                <td><?= e((string)($row['reference_after'] ?? '')) ?></td>
                 <td><?= e($row['status']) ?></td>
                 <td><?= e((string)($row['relink'] ?? '')) ?></td>
                 <td><?= e($row['error']) ?></td>
@@ -798,7 +819,6 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
                 <td><?= e((string)($row['status_code'] ?? '')) ?></td>
                 <?php if ($bulkDebugEnabled): ?>
                   <td><?= e((string)($row['reference_before'] ?? '')) ?></td>
-                  <td><?= e((string)($row['reference_after'] ?? '')) ?></td>
                 <?php endif; ?>
                 <td><pre style="margin:0;white-space:pre-wrap"><?= e((string)($row['response_body_xml'] ?? '')) ?></pre></td>
               </tr>
