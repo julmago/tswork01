@@ -12,6 +12,7 @@ if (!can_suppliers_ps_bulk()) {
 ensure_stock_sync_schema();
 
 $bulkDebugEnabled = defined('DEBUG') && DEBUG;
+$debugMode = ((int)($_GET['debug'] ?? 0) === 1) || ((int)($_POST['debug'] ?? 0) === 1);
 
 $pdo = db();
 $supplierId = (int)($_SESSION['ps_bulk_supplier_id'] ?? 0);
@@ -526,20 +527,18 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
         $applyError = 'No hay productos seleccionados para aplicar.';
       }
     } catch (Throwable $e) {
-      $pdoError = '';
-      if ($e instanceof PDOException) {
-        $sqlState = (string)($e->errorInfo[0] ?? $e->getCode() ?? '');
-        $pdoError = $sqlState !== '' ? "\nSQLSTATE: {$sqlState}" : '';
-      }
-      error_log('suppliers_ps_bulk APPLY ERROR: ' . $e->getMessage() . $pdoError . "\n" . $e->getTraceAsString());
-
-      if (defined('DEBUG') && DEBUG) {
-        http_response_code(500);
-        die('<pre>APPLY ERROR:\n' . $e->getMessage() . $pdoError . "\n\n" . $e->getTraceAsString() . '</pre>');
+      error_log('suppliers_ps_bulk APPLY ERROR: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+      $last = error_get_last();
+      if ($last) {
+        error_log('LAST_ERROR: ' . print_r($last, true));
       }
 
-      $fatalError = 'Ocurrió un error interno.';
-      $fatalErrorTrace = $e->getMessage() . $pdoError . "\n\n" . $e->getTraceAsString();
+      if ($debugMode) {
+        $fatalError = $e->getMessage() . ' | ' . basename($e->getFile()) . ':' . $e->getLine();
+        $fatalErrorTrace = $e->getTraceAsString();
+      } else {
+        $fatalError = 'Ocurrió un error interno.';
+      }
     }
   }
 }
@@ -567,7 +566,7 @@ if (is_post() && post('action') === 'ps_bulk_apply') {
 
     <?php if ($applyError !== ''): ?><div class="alert alert-danger"><?= e($applyError) ?></div><?php endif; ?>
     <?php if ($fatalError !== ''): ?><div class="alert alert-danger"><?= e($fatalError) ?></div><?php endif; ?>
-    <?php if ($fatalErrorTrace !== '' && defined('DEBUG') && DEBUG): ?><pre><?= e($fatalErrorTrace) ?></pre><?php endif; ?>
+    <?php if ($fatalErrorTrace !== '' && $debugMode): ?><pre><?= e($fatalErrorTrace) ?></pre><?php endif; ?>
     <?php if ($applySuccess !== ''): ?><div class="alert alert-success"><?= e($applySuccess) ?></div><?php endif; ?>
 
     <?php if ($formApplyToNonListed && is_post() && post('action') === 'ps_bulk_apply'): ?>
