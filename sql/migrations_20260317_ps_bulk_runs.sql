@@ -1,0 +1,40 @@
+CREATE TABLE IF NOT EXISTS ps_bulk_runs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  user_id INT UNSIGNED NULL,
+  site_id INT UNSIGNED NOT NULL,
+  supplier_id INT UNSIGNED NOT NULL,
+  status ENUM('pending','running','done','error') NOT NULL DEFAULT 'pending',
+  total_estimated INT UNSIGNED NOT NULL DEFAULT 0,
+  processed INT UNSIGNED NOT NULL DEFAULT 0,
+  ok INT UNSIGNED NOT NULL DEFAULT 0,
+  skipped INT UNSIGNED NOT NULL DEFAULT 0,
+  not_found INT UNSIGNED NOT NULL DEFAULT 0,
+  error INT UNSIGNED NOT NULL DEFAULT 0,
+  next_offset INT UNSIGNED NOT NULL DEFAULT 0,
+  batch_limit INT UNSIGNED NOT NULL DEFAULT 5,
+  settings_json LONGTEXT NULL,
+  last_error TEXT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_ps_bulk_runs_supplier (supplier_id, created_at),
+  KEY idx_ps_bulk_runs_status (status, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ps_bulk_run_rows (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sku_supplier VARCHAR(190) NULL,
+  sku_tsw VARCHAR(190) NULL,
+  ps_id INT NULL,
+  action VARCHAR(120) NULL,
+  result VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+  relink VARCHAR(255) NULL,
+  request_url TEXT NULL,
+  extra_json LONGTEXT NULL,
+  PRIMARY KEY (id),
+  KEY idx_ps_bulk_run_rows_run (run_id, id),
+  KEY idx_ps_bulk_run_rows_result (run_id, result),
+  CONSTRAINT fk_ps_bulk_run_rows_run FOREIGN KEY (run_id) REFERENCES ps_bulk_runs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
