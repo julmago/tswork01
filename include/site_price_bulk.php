@@ -231,8 +231,8 @@ function site_price_bulk_ml_set_price(int $siteId, string $itemId, string $varia
 }
 
 function site_price_bulk_ps_set_price(array $site, int $idProduct, int $idProductAttribute, float $newPrice): array {
-  $baseUrl = trim((string)($site['ps_base_url'] ?? ''));
-  $apiKey = trim((string)($site['ps_api_key'] ?? ''));
+  $baseUrl = rtrim(trim((string)($site['ps_base_url'] ?? '')), '/');
+  $apiKey = ps_normalize_api_key((string)($site['ps_api_key'] ?? ''));
   if ($baseUrl === '' || $apiKey === '') {
     return ['ok' => false, 'message' => 'Sitio PrestaShop sin credenciales.'];
   }

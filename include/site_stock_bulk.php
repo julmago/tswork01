@@ -226,7 +226,15 @@ function site_stock_bulk_load_site(PDO $pdo, int $siteId): array {
   if (!$site) {
     throw new RuntimeException('Sitio no encontrado.');
   }
-  return is_array($site) ? $site : [];
+
+  if (!is_array($site)) {
+    return [];
+  }
+
+  $site['ps_base_url'] = rtrim(trim((string)($site['ps_base_url'] ?? '')), '/');
+  $site['ps_api_key'] = ps_normalize_api_key((string)($site['ps_api_key'] ?? ''));
+
+  return $site;
 }
 
 function site_stock_bulk_preview_text(string $text, int $maxLen = 300): string {
