@@ -719,6 +719,45 @@ $nextPage = min($totalPages, $page + 1);
               </div>
             </div>
             <?php endif; ?>
+
+            <?php if ($canSitesBulkImportExport): ?>
+            <div class="card" id="sitePriceBulkCard">
+              <div class="card-header">
+                <h3 class="card-title">Actualizar precios masivo</h3>
+              </div>
+              <p class="muted small">Actualiza precios únicamente desde TSWork hacia el sitio. El ajuste (%) es opcional, se calcula sobre el precio actual de TSWork y los productos con precio 0, vacío o no disponible se omiten.</p>
+              <form id="sitePriceBulkForm" class="grid" style="grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: var(--space-3); align-items:end;">
+                <input type="hidden" id="sitePriceBulkSiteId" value="<?= (int)$editSite['id'] ?>">
+                <label class="form-field">
+                  <span class="form-label">Acción</span>
+                  <input class="form-control" type="text" value="Actualizar precios (TSWork → Sitio)" readonly>
+                </label>
+                <label class="form-field">
+                  <span class="form-label">Ajuste (%)</span>
+                  <input class="form-control" type="number" id="sitePriceBulkAdjustment" step="0.01" placeholder="0">
+                </label>
+                <div class="form-field">
+                  <button class="btn" type="submit" id="sitePriceBulkSubmit">Ejecutar</button>
+                </div>
+              </form>
+              <div id="sitePriceBulkMessage" class="muted small" style="margin-top: var(--space-3);"></div>
+              <div class="table-wrapper" style="margin-top: var(--space-3); display:none;" id="sitePriceBulkTableWrap">
+                <table class="table" id="sitePriceBulkTable">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Estado</th>
+                      <th>Precio TSWork</th>
+                      <th>Ajuste (%)</th>
+                      <th>Precio final enviado</th>
+                      <th>Mensaje</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sitePriceBulkTbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <?php endif; ?>
           <?php endif; ?>
 
     <?php endif; ?>
@@ -824,6 +863,16 @@ $nextPage = min($totalPages, $page + 1);
       var siteStockBulkRunId = 0;
       var siteStockBulkStepOffset = 0;
       var siteStockBulkStepLimit = 300;
+
+      var sitePriceBulkForm = document.getElementById('sitePriceBulkForm');
+      var sitePriceBulkSiteId = document.getElementById('sitePriceBulkSiteId');
+      var sitePriceBulkAdjustment = document.getElementById('sitePriceBulkAdjustment');
+      var sitePriceBulkMessage = document.getElementById('sitePriceBulkMessage');
+      var sitePriceBulkTableWrap = document.getElementById('sitePriceBulkTableWrap');
+      var sitePriceBulkTbody = document.getElementById('sitePriceBulkTbody');
+      var sitePriceBulkSubmit = document.getElementById('sitePriceBulkSubmit');
+      var sitePriceBulkRunId = 0;
+      var sitePriceBulkStepLimit = 150;
 
       var siteSkuTestForm = document.getElementById('siteSkuTestForm');
       var siteSkuTestInput = document.getElementById('siteSkuTestInput');
@@ -964,6 +1013,99 @@ $nextPage = min($totalPages, $page + 1);
             siteStockBulkHideDiagnostic();
             siteStockBulkStepOffset += siteStockBulkStepLimit;
             return siteStockBulkRunStep();
+          });
+      }
+
+      function sitePriceBulkClearTable() {
+        if (sitePriceBulkTbody) {
+          sitePriceBulkTbody.innerHTML = '';
+        }
+      }
+
+      function sitePriceBulkSetMessage(text, type) {
+        if (!sitePriceBulkMessage) return;
+        sitePriceBulkMessage.className = 'muted small';
+        if (type === 'error') {
+          sitePriceBulkMessage.className = 'alert alert-danger';
+        } else if (type === 'info') {
+          sitePriceBulkMessage.className = 'alert alert-warning';
+        }
+        sitePriceBulkMessage.textContent = text;
+      }
+
+      function sitePriceBulkRenderRows(rows) {
+        if (!sitePriceBulkTableWrap || !sitePriceBulkTbody) {
+          return;
+        }
+        sitePriceBulkClearTable();
+        sitePriceBulkTableWrap.style.display = '';
+        rows.forEach(function (row) {
+          var tr = document.createElement('tr');
+          var tdSku = document.createElement('td');
+          tdSku.textContent = row.sku || '';
+          var tdStatus = document.createElement('td');
+          tdStatus.textContent = row.status || '';
+          var tdTsPrice = document.createElement('td');
+          tdTsPrice.textContent = Number.isFinite(Number(row.ts_price_before)) ? String(Number(row.ts_price_before).toFixed(2)) : '—';
+          var tdAdjustment = document.createElement('td');
+          tdAdjustment.textContent = Number.isFinite(Number(row.adjustment_percent)) ? String(Number(row.adjustment_percent).toFixed(2)) : '0.00';
+          var tdFinal = document.createElement('td');
+          tdFinal.textContent = Number.isFinite(Number(row.final_price || row.remote_price_after)) ? String(Number(row.final_price || row.remote_price_after).toFixed(2)) : '—';
+          var tdMessage = document.createElement('td');
+          tdMessage.textContent = row.message || '';
+
+          tr.appendChild(tdSku);
+          tr.appendChild(tdStatus);
+          tr.appendChild(tdTsPrice);
+          tr.appendChild(tdAdjustment);
+          tr.appendChild(tdFinal);
+          tr.appendChild(tdMessage);
+          sitePriceBulkTbody.appendChild(tr);
+        });
+      }
+
+      function sitePriceBulkStatusMessage(payload) {
+        var processed = payload && Number.isFinite(Number(payload.processed_rows)) ? parseInt(payload.processed_rows, 10) : 0;
+        var total = payload && Number.isFinite(Number(payload.total_rows)) ? parseInt(payload.total_rows, 10) : 0;
+        return 'Progreso: ' + processed + '/' + total;
+      }
+
+      function sitePriceBulkRunStep() {
+        if (!sitePriceBulkRunId) {
+          return Promise.resolve();
+        }
+        var body = new URLSearchParams();
+        body.append('run_id', String(sitePriceBulkRunId));
+        body.append('limit', String(sitePriceBulkStepLimit));
+
+        return fetch('api/site_price_bulk_step.php', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: body.toString()
+        })
+          .then(function (response) { return response.json(); })
+          .then(function (payload) {
+            if (!payload || payload.ok !== true) {
+              sitePriceBulkSetMessage(payload && payload.error ? payload.error : 'No se pudo procesar el lote de precios.', 'error');
+              return;
+            }
+            if (Array.isArray(payload.rows) && payload.rows.length > 0) {
+              sitePriceBulkRenderRows(payload.rows);
+            }
+            if (payload.status === 'error') {
+              sitePriceBulkSetMessage(sitePriceBulkStatusMessage(payload) + ' · ' + (payload.last_error || 'Error en proceso.'), 'error');
+              return;
+            }
+            if (payload.status === 'done') {
+              sitePriceBulkSetMessage(sitePriceBulkStatusMessage(payload) + ' · Finalizado.', '');
+              return;
+            }
+            sitePriceBulkSetMessage(sitePriceBulkStatusMessage(payload), '');
+            return sitePriceBulkRunStep();
           });
       }
 
@@ -1108,6 +1250,52 @@ $nextPage = min($totalPages, $page + 1);
             .finally(function () {
               if (siteStockBulkSubmit) {
                 siteStockBulkSubmit.disabled = false;
+              }
+            });
+        });
+      }
+
+      if (sitePriceBulkForm && sitePriceBulkSiteId && sitePriceBulkAdjustment) {
+        sitePriceBulkForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          if (sitePriceBulkSubmit) {
+            sitePriceBulkSubmit.disabled = true;
+          }
+          sitePriceBulkRunId = 0;
+          sitePriceBulkSetMessage('Preparando actualización de precios...', '');
+          if (sitePriceBulkTableWrap) {
+            sitePriceBulkTableWrap.style.display = 'none';
+          }
+
+          var body = new URLSearchParams();
+          body.append('site_id', String(sitePriceBulkSiteId.value || ''));
+          body.append('adjustment_percent', String(sitePriceBulkAdjustment.value || '').trim());
+
+          fetch('api/site_price_bulk_start.php', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: body.toString()
+          })
+            .then(function (response) { return response.json(); })
+            .then(function (payload) {
+              if (!payload || payload.ok !== true) {
+                sitePriceBulkSetMessage(payload && payload.error ? payload.error : 'No se pudo iniciar la actualización de precios.', 'error');
+                return Promise.resolve();
+              }
+              sitePriceBulkRunId = parseInt(payload.run_id || 0, 10) || 0;
+              sitePriceBulkSetMessage(sitePriceBulkStatusMessage(payload), '');
+              return sitePriceBulkRunStep();
+            })
+            .catch(function () {
+              sitePriceBulkSetMessage('No se pudo ejecutar la actualización de precios.', 'error');
+            })
+            .finally(function () {
+              if (sitePriceBulkSubmit) {
+                sitePriceBulkSubmit.disabled = false;
               }
             });
         });
