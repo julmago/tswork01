@@ -38,7 +38,9 @@ function ps_normalize_api_key(?string $key): string {
   if ($value === '') {
     return '';
   }
-  return preg_replace('/\s+/', '', $value) ?? '';
+
+  $normalized = preg_replace('/[\s\x{00A0}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+/u', '', $value);
+  return $normalized ?? '';
 }
 
 function ps_is_valid_api_key(?string $key): bool {
