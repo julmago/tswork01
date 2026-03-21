@@ -33,8 +33,21 @@ function ps_base_url_api(?string $baseUrl = null): string {
   return $base . '/api';
 }
 
+function ps_normalize_api_key(?string $key): string {
+  $value = trim((string)$key);
+  if ($value === '') {
+    return '';
+  }
+  return preg_replace('/\s+/', '', $value) ?? '';
+}
+
+function ps_is_valid_api_key(?string $key): bool {
+  $normalized = ps_normalize_api_key($key);
+  return $normalized !== '' && preg_match('/^[a-fA-F0-9]{32}$/', $normalized) === 1;
+}
+
 function ps_api_key(): string {
-  return trim(setting_get('prestashop_api_key', ''));
+  return ps_normalize_api_key(setting_get('prestashop_api_key', ''));
 }
 
 function ps_mode(): string {
@@ -90,9 +103,12 @@ function ps_request(string $method, string $path, ?string $body = null, array $h
 
 function ps_request_with_credentials(string $method, string $path, string $base, string $key, ?string $body = null, array $headers = [], int $shopId = 0): array {
   $base = ps_base_url_api($base);
-  $key = trim($key);
+  $key = ps_normalize_api_key($key);
   if ($base === '' || $key === '') {
     throw new RuntimeException("Falta configurar PrestaShop (URL / API Key).");
+  }
+  if (!ps_is_valid_api_key($key)) {
+    throw new RuntimeException('La API Key de PrestaShop es inválida. Debe tener 32 caracteres hexadecimales, sin espacios.');
   }
 
   $normalized = ps_with_shop_context($path, $shopId);

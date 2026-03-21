@@ -68,7 +68,7 @@ if (is_post()) {
     $stockSyncMode = normalize_stock_sync_mode(post('stock_sync_mode', ''), $syncStockEnabledLegacy);
     $syncStockEnabled = $stockSyncMode === 'OFF' ? 0 : 1;
     $psBaseUrl = trim(post('ps_base_url'));
-    $psApiKey = trim(post('ps_api_key'));
+    $psApiKey = ps_normalize_api_key(post('ps_api_key'));
     $webhookSecret = trim(post('webhook_secret'));
     $psShopIdRaw = trim(post('ps_shop_id'));
     $psShopId = $psShopIdRaw === '' ? null : (int)$psShopIdRaw;
@@ -87,6 +87,8 @@ if (is_post()) {
       $error = 'El nombre del sitio no puede superar los 80 caracteres.';
     } elseif ($margin === null) {
       $error = 'Margen (%) inválido. Usá un valor entre -100 y 999.99.';
+    } elseif ($channelType === 'PRESTASHOP' && $connectionEnabled === 1 && $psApiKey !== '' && !ps_is_valid_api_key($psApiKey)) {
+      $error = 'La API Key de PrestaShop es inválida. Debe tener 32 caracteres hexadecimales, sin espacios.';
     } else {
       try {
         $st = $pdo->prepare('SELECT id FROM sites WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1');
@@ -179,7 +181,7 @@ if (is_post()) {
     $stockSyncMode = normalize_stock_sync_mode(post('stock_sync_mode', ''), $syncStockEnabledLegacy);
     $syncStockEnabled = $stockSyncMode === 'OFF' ? 0 : 1;
     $psBaseUrl = trim(post('ps_base_url'));
-    $psApiKey = trim(post('ps_api_key'));
+    $psApiKey = ps_normalize_api_key(post('ps_api_key'));
     $webhookSecret = trim(post('webhook_secret'));
     $psShopIdRaw = trim(post('ps_shop_id'));
     $psShopId = $psShopIdRaw === '' ? null : (int)$psShopIdRaw;
@@ -200,6 +202,8 @@ if (is_post()) {
       $error = 'El nombre del sitio no puede superar los 80 caracteres.';
     } elseif ($margin === null) {
       $error = 'Margen (%) inválido. Usá un valor entre -100 y 999.99.';
+    } elseif ($channelType === 'PRESTASHOP' && $connectionEnabled === 1 && $psApiKey !== '' && !ps_is_valid_api_key($psApiKey)) {
+      $error = 'La API Key de PrestaShop es inválida. Debe tener 32 caracteres hexadecimales, sin espacios.';
     } else {
       try {
         $st = $pdo->prepare('SELECT id FROM sites WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1');
@@ -407,7 +411,7 @@ if (is_post() && $error !== '' && in_array(post('action'), ['create_site', 'upda
     'stock_sync_mode' => normalize_stock_sync_mode(post('stock_sync_mode', (string)($editConnection['stock_sync_mode'] ?? '')), post('sync_stock_enabled', (string)$editConnection['sync_stock_enabled']) === '1' ? 1 : 0),
     'sync_stock_enabled' => normalize_stock_sync_mode(post('stock_sync_mode', (string)($editConnection['stock_sync_mode'] ?? '')), post('sync_stock_enabled', (string)$editConnection['sync_stock_enabled']) === '1' ? 1 : 0) === 'OFF' ? 0 : 1,
     'ps_base_url' => trim(post('ps_base_url', $editConnection['ps_base_url'])),
-    'ps_api_key' => trim(post('ps_api_key', $editConnection['ps_api_key'])),
+    'ps_api_key' => ps_normalize_api_key(post('ps_api_key', $editConnection['ps_api_key'])),
     'webhook_secret' => trim(post('webhook_secret', $editConnection['webhook_secret'])),
     'ps_shop_id' => trim(post('ps_shop_id', $editConnection['ps_shop_id'])),
     'ml_client_id' => trim(post('ml_client_id', $editConnection['ml_client_id'])),
